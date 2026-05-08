@@ -1,164 +1,696 @@
 <!DOCTYPE html>
-<html lang="en"><head>
-	<meta name="generator" content="Hugo 0.131.0"><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Haniel Ulises&#39; notations</title>
-    <meta charset="utf-8">
-    <meta name="description" content="Ladder@">
-    <meta name="author" content="">
-    <link rel="canonical" href="http://localhost:1313/">
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mathesis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,700;1,400;1,500&family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    <link rel="alternate" type="application/rss+xml" href="http://localhost:1313//index.xml" title="Haniel Ulises&#39; notations">
+  :root {
+    --ink: #1a1714;
+    --ink-muted: #5c5650;
+    --ink-faint: #9c9690;
+    --paper: #f8f4ef;
+    --paper-warm: #f0ebe3;
+    --paper-dark: #e8e1d6;
+    --rule: #c8bfb0;
+    --accent: #8b2e12;
+    --accent-light: #c4521a;
+    --serif: 'EB Garamond', Georgia, serif;
+    --display: 'Playfair Display', Georgia, serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
 
-    
-  
+  html { font-size: 16px; background: var(--paper); color: var(--ink); }
 
+  body {
+    font-family: var(--serif);
+    font-size: 1.05rem;
+    line-height: 1.7;
+    background: var(--paper);
+  }
 
+  /* MASTHEAD */
+  .masthead {
+    border-bottom: 3px double var(--ink);
+    padding: 2.5rem 0 1.5rem;
+    text-align: center;
+    background: var(--paper);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
 
+  .masthead-rule-top {
+    height: 1px;
+    background: var(--ink);
+    margin-bottom: 0.5rem;
+  }
 
-    <meta property="og:url" content="http://localhost:1313/">
-  <meta property="og:site_name" content="Haniel Ulises&#39; notations">
-  <meta property="og:title" content="Haniel Ulises&#39; notations">
-  <meta property="og:locale" content="en_us">
-  <meta property="og:type" content="website">
+  .masthead-tagline {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.22em;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+  }
 
+  .masthead-title {
+    font-family: var(--display);
+    font-size: clamp(3rem, 8vw, 5.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--ink);
+    margin-bottom: 0.3rem;
+  }
 
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Haniel Ulises&#39; notations">
+  .masthead-subtitle {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 0.95rem;
+    color: var(--ink-muted);
+    margin-bottom: 0.8rem;
+  }
 
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  "name": "Haniel Ulises' notations",
-  "url": "http://localhost:1313/",
-  "description": "",
-  "thumbnailUrl": "http://localhost:1313/favicon.ico",
-  "sameAs": [
-      
-  ]
-}
-</script>
-    <link rel="icon" href="/images/avatar.png" sizes="16x16">
+  .masthead-nav {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--rule);
+    padding-top: 0.8rem;
+    margin-top: 0.8rem;
+  }
 
-<link rel="apple-touch-icon" href="/images/avatar.png">
+  .masthead-nav a {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    text-decoration: none;
+    padding: 0.2rem 1rem;
+    border-right: 1px solid var(--rule);
+    transition: color 0.15s;
+    cursor: pointer;
+  }
+  .masthead-nav a:first-child { border-left: 1px solid var(--rule); }
+  .masthead-nav a:hover { color: var(--accent); }
+  .masthead-nav a.active { color: var(--accent); font-weight: 500; }
 
-<link rel="manifest" href="/images/avatar.png">
-    
+  /* LAYOUT */
+  .layout {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 0;
+  }
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css" />
+  .main-col {
+    border-right: 1px solid var(--rule);
+    padding-right: 2.5rem;
+    padding-top: 2.5rem;
+    padding-bottom: 4rem;
+  }
 
-    
-    
-    
-    <link rel="stylesheet" href="/css/main.css" media="screen">
-    
+  .side-col {
+    padding-left: 2rem;
+    padding-top: 2.5rem;
+    padding-bottom: 4rem;
+  }
 
+  /* SECTION HEADER */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
 
-    
-    <link rel="stylesheet" href="/scss/highlight/github-dark.min.min.66034289ee9a113219a2c4aae0a8bd2095ab255c832a42efcf5863f10814e7a1.css" />
+  /* FEATURED ARTICLE */
+  .feature-article {
+    margin-bottom: 3rem;
+    padding-bottom: 2.5rem;
+    border-bottom: 1px solid var(--rule);
+    cursor: pointer;
+  }
 
-    
-    <script src="/js/highlight.min.min.78901136d992bee3718b01b963f8788cd7d974e27c72bf8a283973827a216b7f.js"></script>
-    <script>hljs.highlightAll();</script>
+  .feature-article:hover .feature-title { color: var(--accent); }
 
-    </head>
+  .feature-kicker {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent-light);
+    margin-bottom: 0.6rem;
+  }
+
+  .feature-title {
+    font-family: var(--display);
+    font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--ink);
+    margin-bottom: 0.9rem;
+    transition: color 0.15s;
+  }
+
+  .feature-dek {
+    font-size: 1.05rem;
+    font-style: italic;
+    color: var(--ink-muted);
+    margin-bottom: 1rem;
+    line-height: 1.6;
+  }
+
+  .feature-meta {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+  }
+
+  /* ARTICLE GRID */
+  .article-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+
+  .article-card {
+    padding: 1.5rem 1.5rem 1.5rem 0;
+    border-bottom: 1px solid var(--rule);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .article-card:nth-child(2n) {
+    padding-left: 1.5rem;
+    padding-right: 0;
+    border-left: 1px solid var(--rule);
+  }
+
+  .article-card:hover .card-title { color: var(--accent); }
+
+  .card-kicker {
+    font-family: var(--mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 0.4rem;
+  }
+
+  .card-title {
+    font-family: var(--display);
+    font-size: 1.15rem;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--ink);
+    margin-bottom: 0.5rem;
+    transition: color 0.15s;
+  }
+
+  .card-excerpt {
+    font-size: 0.9rem;
+    color: var(--ink-muted);
+    line-height: 1.55;
+  }
+
+  /* SIDEBAR */
+  .sidebar-section {
+    margin-bottom: 2.5rem;
+    padding-bottom: 2.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .sidebar-heading {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    margin-bottom: 1.2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .topic-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    border: 1px solid var(--rule);
+    padding: 0.25rem 0.6rem;
+    margin: 0.2rem 0.15rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--paper);
+  }
+  .topic-tag:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--paper-warm);
+  }
+
+  .recent-item {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--paper-dark);
+    cursor: pointer;
+  }
+  .recent-item:last-child { border-bottom: none; }
+  .recent-item:hover .recent-title { color: var(--accent); }
+
+  .recent-kicker {
+    font-family: var(--mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 0.2rem;
+  }
+
+  .recent-title {
+    font-family: var(--display);
+    font-size: 0.9rem;
+    line-height: 1.35;
+    color: var(--ink);
+    transition: color 0.15s;
+  }
+
+  /* PULLQUOTE */
+  .pullquote {
+    border-left: 3px solid var(--accent);
+    padding: 0.8rem 1.2rem;
+    margin: 2rem 0;
+    background: var(--paper-warm);
+  }
+
+  .pullquote p {
+    font-family: var(--display);
+    font-style: italic;
+    font-size: 1.2rem;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+
+  /* ABOUT */
+  .about-text {
+    font-size: 0.9rem;
+    color: var(--ink-muted);
+    line-height: 1.65;
+    font-style: italic;
+  }
+
+  /* ARTICLE DETAIL VIEW */
+  .article-view {
+    display: none;
+  }
+
+  .article-view.open {
+    display: block;
+  }
+
+  .index-view.hidden {
+    display: none;
+  }
+
+  .back-btn {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 2rem;
+    border: none;
+    background: none;
+    padding: 0;
+    transition: opacity 0.15s;
+  }
+  .back-btn:hover { opacity: 0.7; }
+
+  .article-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .article-body h2 {
+    font-family: var(--display);
+    font-size: 1.4rem;
+    font-weight: 500;
+    margin: 2rem 0 0.8rem;
+    color: var(--ink);
+  }
+
+  .article-body p {
+    margin-bottom: 1.2rem;
+    font-size: 1.05rem;
+    color: var(--ink);
+  }
+
+  .article-body .math-inline {
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    background: var(--paper-warm);
+    padding: 0.1em 0.35em;
+    border-radius: 2px;
+    color: var(--accent);
+  }
+
+  .write-btn {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--paper);
+    background: var(--ink);
+    padding: 0.6rem 1.4rem;
+    cursor: pointer;
+    border: none;
+    margin-top: 1rem;
+    transition: background 0.15s;
+  }
+  .write-btn:hover { background: var(--accent); }
+
+  @media (max-width: 700px) {
+    .layout { grid-template-columns: 1fr; }
+    .main-col { border-right: none; padding-right: 0; }
+    .side-col { border-top: 1px solid var(--rule); padding-left: 0; }
+    .article-grid { grid-template-columns: 1fr; }
+    .article-card:nth-child(2n) { padding-left: 0; border-left: none; }
+  }
+</style>
+</head>
 <body>
-      <main class="wrapper"><nav class="navigation">
-    <section class="container">
-        <a class="navigation-brand" href="/">
-            
-        </a>
-        <input type="checkbox" id="menu-toggle" />
-        <label class="menu-button float-right" for="menu-toggle">
-            <span></span><span></span><span></span>
-        </label>
-        
-    </section>
-</nav>
-<div id="content">
-    <div class="home">
-    <div class="info">
-        <div class="intro">
-            <h1></h1>
-            <small></small>
-            <p></p>
-        </div>
 
-        
+<header class="masthead">
+  <div class="masthead-rule-top"></div>
+  <div class="masthead-tagline">An independent journal of formal thought</div>
+  <div class="masthead-title">Mathesis</div>
+  <div class="masthead-subtitle">on metaphysics, mathematics, logic, and the limits of knowledge</div>
+  <nav class="masthead-nav">
+    <a class="active" onclick="showIndex()">Index</a>
+    <a onclick="filterTag('Metaphysics')">Metaphysics</a>
+    <a onclick="filterTag('Logic')">Logic</a>
+    <a onclick="filterTag('Mathematics')">Mathematics</a>
+    <a onclick="filterTag('Epistemology')">Epistemology</a>
+    <a onclick="filterTag('AI')">AI</a>
+    <a onclick="filterTag('Theoretical CS')">Theoretical CS</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <main class="main-col">
+
+    <!-- INDEX VIEW -->
+    <div class="index-view" id="index-view">
+      <div class="section-label">Featured essay</div>
+
+      <article class="feature-article" onclick="openArticle(0)">
+        <div class="feature-kicker">Modal Logic &middot; Metaphysics</div>
+        <h1 class="feature-title">Possible Worlds and the Ontology of Necessity</h1>
+        <p class="feature-dek">What does it mean for something to be necessarily true? Kripke's semantics gave us a formal handle on modality — but the metaphysical question remains stubbornly open.</p>
+        <div class="feature-meta">Vol. I &mdash; Essay no. 1 &mdash; May 2026</div>
+      </article>
+
+      <div class="section-label">Recent essays</div>
+
+      <div class="article-grid">
+        <article class="article-card" onclick="openArticle(1)">
+          <div class="card-kicker">Epistemology</div>
+          <div class="card-title">The Gettier Problem and the Fragility of Justified Belief</div>
+          <p class="card-excerpt">Three counterexamples that shattered fifty years of consensus on what it means to know something.</p>
+        </article>
+        <article class="article-card" onclick="openArticle(2)">
+          <div class="card-kicker">Model Theory</div>
+          <div class="card-title">Löwenheim–Skolem and the Indeterminacy of Reference</div>
+          <p class="card-excerpt">If every first-order theory has a countable model, what exactly are our mathematical structures picking out?</p>
+        </article>
+        <article class="article-card" onclick="openArticle(3)">
+          <div class="card-kicker">AI &middot; Epistemology</div>
+          <div class="card-title">Do Language Models Understand, or Only Predict?</div>
+          <p class="card-excerpt">The distinction between syntactic manipulation and semantic comprehension, and why it still matters.</p>
+        </article>
+        <article class="article-card" onclick="openArticle(4)">
+          <div class="card-kicker">Theoretical CS</div>
+          <div class="card-title">Computation as Formal Proof: The Curry–Howard Correspondence</div>
+          <p class="card-excerpt">Programs are proofs. Types are propositions. A deep isomorphism that unifies logic and computation.</p>
+        </article>
+        <article class="article-card" onclick="openArticle(5)">
+          <div class="card-kicker">First-Order Logic</div>
+          <div class="card-title">Completeness and Its Discontents</div>
+          <p class="card-excerpt">Gödel proved FOL is complete. Then he proved arithmetic isn't. On the space between syntax and semantics.</p>
+        </article>
+        <article class="article-card" onclick="openArticle(6)">
+          <div class="card-kicker">Metaphysics</div>
+          <div class="card-title">On the Reality of Mathematical Objects</div>
+          <p class="card-excerpt">Are numbers discovered or invented? The Platonist, the formalist, and the fictionalist walk into a seminar room.</p>
+        </article>
+      </div>
     </div>
 
-    <div class="featured">
-        
-
-<div class="featured-list">
-  </div>
+    <!-- ARTICLE DETAIL VIEW -->
+    <div class="article-view" id="article-view">
+      <button class="back-btn" onclick="showIndex()">&#8592; back to index</button>
+      <div id="article-content"></div>
     </div>
 
+  </main>
+
+  <aside class="side-col">
+
+    <div class="sidebar-section">
+      <div class="sidebar-heading">About Mathesis</div>
+      <p class="about-text">
+        A personal journal on the formal structure of thought — logic, mathematics, metaphysics, epistemology, and artificial intelligence. Written to think, not to perform.
+      </p>
+      <br>
+      <button class="write-btn" onclick="sendPrompt('Help me write a new post for Mathesis')">+ write a new post ↗</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Topics</div>
+      <div>
+        <span class="topic-tag" onclick="filterTag('Metaphysics')">Metaphysics</span>
+        <span class="topic-tag" onclick="filterTag('Mathematics')">Mathematics</span>
+        <span class="topic-tag" onclick="filterTag('Logic')">Logic</span>
+        <span class="topic-tag" onclick="filterTag('Modal Logic')">Modal Logic</span>
+        <span class="topic-tag" onclick="filterTag('FOL')">First-Order Logic</span>
+        <span class="topic-tag" onclick="filterTag('Model Theory')">Model Theory</span>
+        <span class="topic-tag" onclick="filterTag('Epistemology')">Epistemology</span>
+        <span class="topic-tag" onclick="filterTag('AI')">AI</span>
+        <span class="topic-tag" onclick="filterTag('Theoretical CS')">Theoretical CS</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Epigraph</div>
+      <div class="pullquote">
+        <p>"Die Welt ist alles, was der Fall ist."</p>
+      </div>
+      <p style="font-size:0.78rem; color: var(--ink-faint); font-family: var(--mono);">— Wittgenstein, TLP 1</p>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-heading">Reading List</div>
+      <div class="recent-item" onclick="sendPrompt('Tell me about Kripke\'s Naming and Necessity')">
+        <div class="recent-kicker">Modal Logic</div>
+        <div class="recent-title">Naming and Necessity — Kripke</div>
+      </div>
+      <div class="recent-item" onclick="sendPrompt('Explain Gödel\'s incompleteness theorems')">
+        <div class="recent-kicker">Mathematics</div>
+        <div class="recent-title">On Formally Undecidable Propositions — Gödel</div>
+      </div>
+      <div class="recent-item" onclick="sendPrompt('Explain the Church-Turing thesis')">
+        <div class="recent-kicker">Theoretical CS</div>
+        <div class="recent-title">Computability and Logic — Boolos, Burgess, Jeffrey</div>
+      </div>
+      <div class="recent-item" onclick="sendPrompt('What is model theory in mathematical logic?')">
+        <div class="recent-kicker">Model Theory</div>
+        <div class="recent-title">Model Theory — Chang & Keisler</div>
+      </div>
+    </div>
+
+  </aside>
 </div>
 
-
-
-        </div><footer class="footer">
-  <p>&copy; 2024 <a href="http://localhost:1313/">Haniel Ulises&#39; notations</a>
-    Powered by
-    <a href="https://gohugo.io/" rel="noopener" target="_blank">Hugo️️</a>
-    <a href="https://github.com/guangzhengli/hugo-theme-ladder" rel="noopener" target="_blank">Ladder</a>
-️  </p>
-</footer>
-
-<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M10.5376 22.7916C11.0152 22.7207 22.5795 21.1781 22.0978 10.4211C22.0536 9.43274 21.9303 8.53367 21.7387 7.71865M10.5376 22.7916C16.876 22.3728 20.0969 19.8899 21.5383 16.9142M10.5376 22.7916C9.7707 22.9055 8.97982 22.8964 8.19743 22.7725M21.7387 7.71865C21.4988 6.69828 21.1518 5.80967 20.7188 5.04257M21.7387 7.71865C22.6022 10.1105 23.0542 13.7848 21.5383 16.9142M20.7188 5.04257C17.1684 -1.24629 7.83127 0.632493 4.27577 5.04257C2.88063 6.77451 -0.0433281 11.1668 1.38159 16.6571C2.27481 20.0988 5.17269 22.2936 8.19743 22.7725M20.7188 5.04257C22.0697 6.9404 24.0299 11.3848 22.3541 15.4153M21.5383 16.9142C21.8737 16.4251 22.1428 15.9235 22.3541 15.4153M8.19743 22.7725C12.1971 23.4683 20.6281 22.971 22.3541 15.4153M14 10.945C13.3836 10.289 12.003 8.63215 11.2034 7.04814C11.1703 6.98257 11.0247 6.98456 10.9937 7.05061C10.5221 8.05496 9.07362 9.92941 8 10.945M11.0333 7.44444C10.9392 9.86549 11 15 12 17" stroke="currentColor" stroke-linecap="round"/>
-    </svg>
-</a>
 <script>
-    var mybutton = document.getElementById("top-link");
-    window.onscroll = function () {
-        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
-            mybutton.style.visibility = "visible";
-            mybutton.style.opacity = "1";
-        } else {
-            mybutton.style.visibility = "hidden";
-            mybutton.style.opacity = "0";
-        }
-    };
+const articles = [
+  {
+    kicker: "Modal Logic · Metaphysics",
+    title: "Possible Worlds and the Ontology of Necessity",
+    meta: "Vol. I — Essay no. 1 — May 2026",
+    body: `
+      <p>There is a puzzle at the heart of modal logic that rarely gets the attention it deserves outside of specialist circles. When we say that <em>2 + 2 = 4</em> is necessarily true, or that it is <em>possible</em> that I might have had coffee instead of tea this morning, we are making claims that seem intuitively clear but are formally treacherous.</p>
+
+      <h2>Kripke Semantics, Briefly</h2>
+      <p>Kripke's possible worlds semantics gives us an elegant formal handle on this. A modal frame is a pair <span class="math-inline">(W, R)</span> where <span class="math-inline">W</span> is a set of possible worlds and <span class="math-inline">R ⊆ W × W</span> is an accessibility relation. A proposition <span class="math-inline">□φ</span> (necessarily φ) holds at world <span class="math-inline">w</span> iff φ holds at every world <span class="math-inline">w'</span> accessible from <span class="math-inline">w</span>.</p>
+
+      <p>This is clean. It validates our intuitions: logical truths come out necessary, and contingent facts turn out possible. Different constraints on <span class="math-inline">R</span> — reflexivity, transitivity, symmetry — yield different modal systems: T, S4, S5.</p>
+
+      <h2>The Metaphysical Question Remains</h2>
+      <p>But here's where I want to push back on the formalist satisfaction that often follows. The semantics tells us <em>when</em> modal claims are true relative to a structure. It does not tell us what possible worlds <em>are</em>.</p>
+
+      <p>David Lewis thought they were real, concrete entities — as real as this world, differing only in lacking spatiotemporal contact with us. This is modal realism, and it is admirably serious about taking the semantics at face value. But the ontological cost is enormous: we must believe in an uncountably infinite plurality of concrete universes.</p>
+
+      <p>The alternatives — ersatzism, fictionalism, actualism — all struggle to give the quantifiers over possible worlds their full semantic weight without the metaphysical extravagance. This is not a defect of the logic. It is a sign that the logic has done its job and handed the question back to philosophy.</p>
+    `
+  },
+  {
+    kicker: "Epistemology",
+    title: "The Gettier Problem and the Fragility of Justified Belief",
+    meta: "Vol. I — Essay no. 2 — May 2026",
+    body: `
+      <p>In 1963, Edmund Gettier published a paper of barely three pages that ended fifty years of quiet consensus. The received view — that knowledge is justified true belief, tracing back at least to Plato's <em>Meno</em> — turned out to be wrong. Or at least, incomplete in a way that matters.</p>
+
+      <h2>The Structure of a Gettier Case</h2>
+      <p>The machinery is elegant in its subversion. Suppose you have a justified belief that <span class="math-inline">p</span>, and <span class="math-inline">p</span> entails <span class="math-inline">q</span>. You come to believe <span class="math-inline">q</span> on the basis of <span class="math-inline">p</span>. As it happens, <span class="math-inline">p</span> is false — but <span class="math-inline">q</span> is true for entirely independent reasons. You have a justified true belief in <span class="math-inline">q</span>. You do not know <span class="math-inline">q</span>.</p>
+
+      <p>The justification and the truth fail to be connected in the right way. This is the core insight. Knowledge is not just a matter of having the right belief with the right reasons — the reasons must be reasons for the right thing.</p>
+
+      <h2>What Follows</h2>
+      <p>Responses to Gettier have multiplied: add a fourth condition (no false lemmas), require reliable processes (reliabilism), invoke a causal condition, appeal to sensitivity or safety. None has achieved consensus. This is either a sign that the concept of knowledge is irreducibly complex, or that we have been asking the wrong question all along.</p>
+    `
+  },
+  {
+    kicker: "Model Theory",
+    title: "Löwenheim–Skolem and the Indeterminacy of Reference",
+    meta: "Vol. I — Essay no. 3 — May 2026",
+    body: `
+      <p>The Löwenheim–Skolem theorem is one of the most philosophically disquieting results in all of mathematical logic. In its downward form: if a first-order theory has an infinite model, it has a countable model. In its upward form: if it has an infinite model, it has models of every infinite cardinality.</p>
+
+      <h2>The Skolem Paradox</h2>
+      <p>Here is what makes this disturbing. Cantor proved that the real numbers are uncountable. Set theory proves this. But set theory is a first-order theory, and Löwenheim–Skolem guarantees it has a countable model — one in which the "real numbers" are countable from outside the model, even though the model itself cannot establish a bijection with the naturals.</p>
+
+      <p>This is not a contradiction. It is a <em>relativity of set-theoretic concepts to models</em>. What counts as uncountable depends on which functions are available in the model. The theorem does not show set theory is inconsistent — it shows that first-order theories cannot pin down their intended models.</p>
+
+      <h2>On Reference</h2>
+      <p>Putnam weaponized this against metaphysical realism. If our best theories underdetermine their models, in what sense does language hook onto the world? The indeterminacy is not merely epistemic — it seems to be built into the formal structure of reference itself.</p>
+    `
+  },
+  {
+    kicker: "AI · Epistemology",
+    title: "Do Language Models Understand, or Only Predict?",
+    meta: "Vol. I — Essay no. 4 — May 2026",
+    body: `
+      <p>The question is not new. Searle's Chinese Room argued in 1980 that syntactic manipulation, however sophisticated, never constitutes semantic understanding. The argument was disputed then. It is disputed now. But the disputants are no longer arguing in the abstract — we have systems that actually pass the surface tests.</p>
+
+      <h2>What Prediction Does</h2>
+      <p>A language model trained on next-token prediction learns, in some sense, a compressed representation of the distribution of human language. It learns correlations, regularities, patterns that span vast scales. Whether this constitutes "understanding" depends on what understanding is.</p>
+
+      <p>If understanding is the ability to respond appropriately to a range of inputs, to generalize, to represent relevant structure — then the question becomes empirical. If understanding requires something like phenomenal consciousness, or grounding in sensorimotor experience, or genuine intentionality — then the question may be unanswerable by behavior alone.</p>
+
+      <h2>The Philosophical Stakes</h2>
+      <p>What I find most interesting is not whether any particular system "really" understands, but what the question forces us to clarify about our own concepts. The Chinese Room showed that a clear operational criterion for intelligence was harder to specify than it seemed. Current systems are doing the same work again, at a scale that makes the question impossible to defer.</p>
+    `
+  },
+  {
+    kicker: "Theoretical CS",
+    title: "Computation as Formal Proof: The Curry–Howard Correspondence",
+    meta: "Vol. I — Essay no. 5 — May 2026",
+    body: `
+      <p>There is a deep isomorphism running through the foundations of computation and logic, one that took decades to articulate fully. The Curry–Howard correspondence says: propositions are types, proofs are programs, proof normalization is computation.</p>
+
+      <h2>The Basic Correspondence</h2>
+      <p>In simply typed lambda calculus, each term has a type. The types form a propositional logic — function types correspond to implication, product types to conjunction. A well-typed term <span class="math-inline">t : A</span> is simultaneously a program of type <span class="math-inline">A</span> and a proof of proposition <span class="math-inline">A</span>.</p>
+
+      <p>This is not a metaphor. It is a precise formal correspondence. The type-checking algorithm and the proof-checking algorithm are the same algorithm. Running a program corresponds to normalizing a proof — eliminating detours, reducing to canonical form.</p>
+
+      <h2>Extensions and Limits</h2>
+      <p>The correspondence extends: dependent types correspond to predicate logic, modal types to necessity, linear types to resource-sensitive logics. But it also reveals limits — classical logic corresponds to control operators, to the ability to "undo" computation, which is a fundamentally different computational paradigm from the constructive one.</p>
+
+      <p>The philosophical upshot is that proof and computation are not merely analogous. They are, in a precise sense, the same thing looked at from different directions.</p>
+    `
+  },
+  {
+    kicker: "First-Order Logic",
+    title: "Completeness and Its Discontents",
+    meta: "Vol. I — Essay no. 6 — May 2026",
+    body: `
+      <p>Gödel's completeness theorem for first-order logic — his doctoral dissertation — is one of the great results of twentieth-century logic. Every valid first-order sentence is provable. Semantics and proof theory coincide, for FOL. This is a beautiful and non-trivial fact.</p>
+
+      <h2>Then the Other Theorem</h2>
+      <p>Then, the following year, the incompleteness theorems. Any consistent formal system powerful enough to express basic arithmetic cannot prove all arithmetic truths. The semantic notion — truth in the standard model — outruns the syntactic notion — provability in the system.</p>
+
+      <p>The contrast is striking. FOL is complete. Arithmetic, formalized in FOL, is not. The difference lies in expressive power. FOL can express what it can express, and for what it can express, completeness holds. But once we fix the intended semantics — the standard model of arithmetic — provability falls short.</p>
+
+      <h2>The Gap as a Structural Fact</h2>
+      <p>What Gödel showed is that this gap is not a technical deficiency to be overcome with more axioms. Any consistent extension of a sufficiently strong arithmetic will have its own independent sentences. The incompleteness is structural, not accidental. It is a fact about the relationship between syntax and semantics when the target structure is rich enough.</p>
+    `
+  },
+  {
+    kicker: "Metaphysics",
+    title: "On the Reality of Mathematical Objects",
+    meta: "Vol. I — Essay no. 7 — May 2026",
+    body: `
+      <p>Here is a question that sounds like it should have a straightforward answer and doesn't: do mathematical objects exist? The number seven — is it real? Where is it? What is it made of? How do we know things about it?</p>
+
+      <h2>Platonism and Its Discontents</h2>
+      <p>Mathematical Platonism says: yes, abstract objects exist, they are not in space or time, and we access them through something like rational intuition. This explains the necessity and universality of mathematical truth — but at the cost of a deeply puzzling epistemology. If mathematical objects are causally inert, how do we ever come to know anything about them?</p>
+
+      <h2>The Alternatives</h2>
+      <p>Formalism says mathematics is a game with symbols — consistent rule-following without any intended model. This sidesteps the ontological question but struggles to explain the applicability of mathematics to physics. Why should a game be so unreasonably effective?</p>
+
+      <p>Fictionalism says mathematical statements are false, strictly speaking, but useful fictions. This is honest but philosophically costly — it makes the mathematician's practice look like a kind of systematic pretence.</p>
+
+      <p>My own sympathies oscillate. The structuralist position — that mathematics is about structures, not individual objects — seems to me to make real progress. What matters is not the specific objects but the relations that hold among them. But I am not sure this dissolves the ontological question so much as displace it.</p>
+    `
+  }
+];
+
+function openArticle(idx) {
+  const a = articles[idx];
+  document.getElementById('article-content').innerHTML = `
+    <div class="article-header">
+      <div class="feature-kicker">${a.kicker}</div>
+      <h1 class="feature-title" style="font-size:clamp(1.6rem,3vw,2.2rem)">${a.title}</h1>
+      <div class="feature-meta">${a.meta}</div>
+    </div>
+    <div class="article-body">${a.body}</div>
+  `;
+  document.getElementById('index-view').classList.add('hidden');
+  document.getElementById('article-view').classList.add('open');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function showIndex() {
+  document.getElementById('index-view').classList.remove('hidden');
+  document.getElementById('article-view').classList.remove('open');
+  document.querySelectorAll('.masthead-nav a').forEach(a => a.classList.remove('active'));
+  document.querySelector('.masthead-nav a').classList.add('active');
+}
+
+function filterTag(tag) {
+  sendPrompt(`Show me posts about ${tag} on Mathesis`);
+}
 </script>
-
-<script>
-    document.querySelectorAll('pre > code').forEach((codeblock) => {
-        const container = codeblock.parentNode.parentNode;
-
-        const copybutton = document.createElement('button');
-        copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'Copy';
-
-        function copyingDone() {
-            copybutton.innerHTML = 'Copied';
-            setTimeout(() => {
-                copybutton.innerHTML = 'Copy';
-            }, 2000);
-        }
-
-        copybutton.addEventListener('click', (cb) => {
-            if ('clipboard' in navigator) {
-                navigator.clipboard.writeText(codeblock.textContent);
-                copyingDone();
-                return;
-            }
-
-            const range = document.createRange();
-            range.selectNodeContents(codeblock);
-            const selection = window.getSelection();
-            selection.removeAllRanges();
-            selection.addRange(range);
-            try {
-                document.execCommand('copy');
-                copyingDone();
-            } catch (e) { };
-            selection.removeRange(range);
-        });
-        codeblock.parentNode.appendChild(copybutton);
-    });
-</script></main>
-    </body><script src="/main.min.cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e.js" integrity="sha512-z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP&#43;DGNKHfuwvY7kxvUdBeoGlODJ6&#43;SfaPg==" crossorigin="anonymous" defer></script></html>
+</body>
+</html>
