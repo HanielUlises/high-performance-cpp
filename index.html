@@ -1,353 +1,410 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mathesis</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,700;1,400;1,500&family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --ink: #1a1714;
-    --ink-muted: #5c5650;
-    --ink-faint: #9c9690;
-    --paper: #f8f4ef;
-    --paper-warm: #f0ebe3;
-    --paper-dark: #e8e1d6;
-    --rule: #c8bfb0;
-    --accent: #8b2e12;
-    --accent-light: #c4521a;
-    --serif: 'EB Garamond', Georgia, serif;
-    --display: 'Playfair Display', Georgia, serif;
-    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --serif: 'Source Serif 4', Georgia, serif;
+    --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
   }
 
-  html { font-size: 16px; background: var(--paper); color: var(--ink); }
+  /* LIGHT THEME (default) */
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-soft: #f6f8fa;
+    --sidebar-bg: #ffffff;
+    --card-bg: #ffffff;
+    --text: #34343c;
+    --text-strong: #1d1d1f;
+    --text-muted: #6a6a72;
+    --text-faint: #9a9aa2;
+    --border: #ededf0;
+    --border-soft: #f0f0f3;
+    --accent: #2a5db0;
+    --accent-soft: #eaf1fb;
+    --tag-bg: #f0f2f5;
+    --tag-text: #5a5a63;
+    --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+  }
+
+  /* DARK THEME */
+  :root[data-theme="dark"] {
+    --bg: #1b1b1e;
+    --bg-soft: #212124;
+    --sidebar-bg: #171719;
+    --card-bg: #242427;
+    --text: #cfcfd4;
+    --text-strong: #f4f4f6;
+    --text-muted: #9a9aa2;
+    --text-faint: #6f6f77;
+    --border: #2f2f33;
+    --border-soft: #2a2a2e;
+    --accent: #6ea8fe;
+    --accent-soft: #22303f;
+    --tag-bg: #2a2a2e;
+    --tag-text: #b6b6bf;
+    --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+
+  html { font-size: 16px; }
 
   body {
-    font-family: var(--serif);
-    font-size: 1.05rem;
+    font-family: var(--sans);
+    font-size: 1rem;
     line-height: 1.7;
-    background: var(--paper);
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    transition: background 0.2s, color 0.2s;
   }
 
-  /* MASTHEAD */
-  .masthead {
-    border-bottom: 3px double var(--ink);
-    padding: 2.5rem 0 1.5rem;
-    text-align: center;
-    background: var(--paper);
-    position: sticky;
+  a { color: inherit; text-decoration: none; }
+
+  /* ================= SIDEBAR ================= */
+  #sidebar {
+    position: fixed;
     top: 0;
+    left: 0;
+    width: 270px;
+    height: 100vh;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    padding: 2.2rem 1.6rem;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
     z-index: 100;
   }
 
-  .masthead-rule-top {
-    height: 1px;
-    background: var(--ink);
-    margin-bottom: 0.5rem;
-  }
+  .brand { text-align: center; }
 
-  .masthead-tagline {
-    font-family: var(--mono);
-    font-size: 0.62rem;
-    letter-spacing: 0.22em;
-    color: var(--ink-muted);
-    text-transform: uppercase;
-    margin-bottom: 0.6rem;
-  }
-
-  .masthead-title {
-    font-family: var(--display);
-    font-size: clamp(3rem, 8vw, 5.5rem);
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    line-height: 1;
-    color: var(--ink);
-    margin-bottom: 0.3rem;
-  }
-
-  .masthead-subtitle {
-    font-family: var(--serif);
-    font-style: italic;
-    font-size: 0.95rem;
-    color: var(--ink-muted);
-    margin-bottom: 0.8rem;
-  }
-
-  .masthead-nav {
-    display: flex;
-    justify-content: center;
-    gap: 0;
-    flex-wrap: wrap;
-    border-top: 1px solid var(--rule);
-    padding-top: 0.8rem;
-    margin-top: 0.8rem;
-  }
-
-  .masthead-nav a {
-    font-family: var(--mono);
-    font-size: 0.65rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-    text-decoration: none;
-    padding: 0.2rem 1rem;
-    border-right: 1px solid var(--rule);
-    transition: color 0.15s;
-    cursor: pointer;
-  }
-  .masthead-nav a:first-child { border-left: 1px solid var(--rule); }
-  .masthead-nav a:hover { color: var(--accent); }
-  .masthead-nav a.active { color: var(--accent); font-weight: 500; }
-
-  /* LAYOUT */
-  .layout {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 0 1.5rem;
-    display: grid;
-    grid-template-columns: 1fr 280px;
-    gap: 0;
-  }
-
-  .main-col {
-    border-right: 1px solid var(--rule);
-    padding-right: 2.5rem;
-    padding-top: 2.5rem;
-    padding-bottom: 4rem;
-  }
-
-  .side-col {
-    padding-left: 2rem;
-    padding-top: 2.5rem;
-    padding-bottom: 4rem;
-  }
-
-  /* SECTION HEADER */
-  .section-label {
-    font-family: var(--mono);
-    font-size: 0.6rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 1.5rem;
+  .brand-avatar {
+    width: 84px;
+    height: 84px;
+    margin: 0 auto 1rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), #7d3ac1);
     display: flex;
     align-items: center;
-    gap: 0.8rem;
-  }
-  .section-label::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--rule);
-  }
-
-  /* FEATURED ARTICLE */
-  .feature-article {
-    margin-bottom: 3rem;
-    padding-bottom: 2.5rem;
-    border-bottom: 1px solid var(--rule);
+    justify-content: center;
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: 2.4rem;
+    color: #fff;
+    box-shadow: var(--shadow);
     cursor: pointer;
   }
 
-  .feature-article:hover .feature-title { color: var(--accent); }
+  .brand-title {
+    font-family: var(--serif);
+    font-size: 1.6rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--text-strong);
+    cursor: pointer;
+  }
 
-  .feature-kicker {
+  .brand-tagline {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.45;
+    margin-top: 0.5rem;
+    padding: 0 0.2rem;
+  }
+
+  /* NAV */
+  .nav {
+    margin-top: 2.2rem;
+    list-style: none;
+  }
+
+  .nav li { margin-bottom: 0.15rem; }
+
+  .nav a {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.55rem 0.9rem;
+    border-radius: 8px;
+    font-size: 0.86rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .nav a .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor; opacity: 0.5; flex-shrink: 0;
+  }
+  .nav a:hover { color: var(--accent); }
+  .nav a.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .nav a.active .dot { opacity: 1; }
+
+  .sidebar-spacer { flex: 1; min-height: 1.5rem; }
+
+  .sidebar-foot {
+    border-top: 1px solid var(--border);
+    padding-top: 1.1rem;
+    text-align: center;
+  }
+
+  .epigraph {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .epigraph cite {
+    display: block;
+    font-family: var(--mono);
+    font-style: normal;
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    margin-top: 0.5rem;
+  }
+
+  .theme-toggle {
+    margin-top: 1.1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
     font-family: var(--mono);
     font-size: 0.62rem;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: var(--accent-light);
-    margin-bottom: 0.6rem;
+    color: var(--text-muted);
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 0.4rem 0.9rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* ================= MAIN WRAPPER ================= */
+  #main-wrapper { margin-left: 270px; }
+
+  .content-grid {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2.6rem 2.2rem 5rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 240px;
+    gap: 2.6rem;
   }
 
-  .feature-title {
-    font-family: var(--display);
-    font-size: clamp(1.8rem, 3.5vw, 2.6rem);
-    font-weight: 700;
-    line-height: 1.15;
-    color: var(--ink);
-    margin-bottom: 0.9rem;
+  .main-col { min-width: 0; }
+
+  /* PAGE HEADING */
+  .page-head {
+    margin-bottom: 2rem;
+    padding-bottom: 1.2rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-head h1 {
+    font-family: var(--serif);
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .page-head p {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-top: 0.3rem;
+  }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 2rem 0 1.1rem;
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  /* POST CARD */
+  .post-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1.1rem;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+  }
+  .post-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+    border-color: var(--accent);
+  }
+  .post-card:hover .post-card-title { color: var(--accent); }
+
+  .post-card.feature { border-left: 3px solid var(--accent); }
+
+  .post-card-title {
+    font-family: var(--serif);
+    font-size: 1.3rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text-strong);
+    margin-bottom: 0.4rem;
     transition: color 0.15s;
   }
+  .post-card.feature .post-card-title { font-size: 1.55rem; }
 
-  .feature-dek {
-    font-size: 1.05rem;
-    font-style: italic;
-    color: var(--ink-muted);
+  .post-card-excerpt {
+    font-size: 0.92rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 0.9rem;
+  }
+
+  .post-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    text-transform: uppercase;
+  }
+  .post-meta .cat {
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 0.18rem 0.55rem;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+  .post-meta .sep { opacity: 0.5; }
+
+  /* ================= RIGHT PANEL ================= */
+  .panel { position: sticky; top: 2.6rem; align-self: start; }
+
+  .panel-block {
+    background: var(--bg-soft);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 1.2rem 1.3rem;
+    margin-bottom: 1.4rem;
+  }
+
+  .panel-heading {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
     margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .panel-heading::before {
+    content: '';
+    width: 3px; height: 13px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+
+  .about-text {
+    font-size: 0.83rem;
+    color: var(--text-muted);
     line-height: 1.6;
   }
 
-  .feature-meta {
-    font-family: var(--mono);
-    font-size: 0.6rem;
-    letter-spacing: 0.12em;
-    color: var(--ink-faint);
-    text-transform: uppercase;
-  }
-
-  /* ARTICLE GRID */
-  .article-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0;
-  }
-
-  .article-card {
-    padding: 1.5rem 1.5rem 1.5rem 0;
-    border-bottom: 1px solid var(--rule);
+  .write-btn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    font-family: var(--sans);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #fff;
+    background: var(--accent);
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    border: none;
     cursor: pointer;
-    transition: background 0.15s;
+    margin-top: 1rem;
+    transition: opacity 0.15s;
   }
-
-  .article-card:nth-child(2n) {
-    padding-left: 1.5rem;
-    padding-right: 0;
-    border-left: 1px solid var(--rule);
-  }
-
-  .article-card:hover .card-title { color: var(--accent); }
-
-  .card-kicker {
-    font-family: var(--mono);
-    font-size: 0.58rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    margin-bottom: 0.4rem;
-  }
-
-  .card-title {
-    font-family: var(--display);
-    font-size: 1.15rem;
-    font-weight: 500;
-    line-height: 1.3;
-    color: var(--ink);
-    margin-bottom: 0.5rem;
-    transition: color 0.15s;
-  }
-
-  .card-excerpt {
-    font-size: 0.9rem;
-    color: var(--ink-muted);
-    line-height: 1.55;
-  }
-
-  /* SIDEBAR */
-  .sidebar-section {
-    margin-bottom: 2.5rem;
-    padding-bottom: 2.5rem;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  .sidebar-heading {
-    font-family: var(--mono);
-    font-size: 0.6rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-    margin-bottom: 1.2rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  .topic-tag {
-    display: inline-block;
-    font-family: var(--mono);
-    font-size: 0.6rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-    border: 1px solid var(--rule);
-    padding: 0.25rem 0.6rem;
-    margin: 0.2rem 0.15rem;
-    cursor: pointer;
-    transition: all 0.15s;
-    background: var(--paper);
-  }
-  .topic-tag:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--paper-warm);
-  }
+  .write-btn:hover { opacity: 0.88; }
 
   .recent-item {
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--paper-dark);
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border-soft);
     cursor: pointer;
   }
-  .recent-item:last-child { border-bottom: none; }
+  .recent-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .recent-item:first-child { padding-top: 0; }
   .recent-item:hover .recent-title { color: var(--accent); }
 
   .recent-kicker {
     font-family: var(--mono);
-    font-size: 0.55rem;
-    letter-spacing: 0.15em;
+    font-size: 0.56rem;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--ink-faint);
+    color: var(--text-faint);
     margin-bottom: 0.2rem;
   }
-
   .recent-title {
-    font-family: var(--display);
-    font-size: 0.9rem;
+    font-size: 0.82rem;
     line-height: 1.35;
-    color: var(--ink);
+    color: var(--text);
     transition: color 0.15s;
   }
 
-  /* PULLQUOTE */
-  .pullquote {
-    border-left: 3px solid var(--accent);
-    padding: 0.8rem 1.2rem;
-    margin: 2rem 0;
-    background: var(--paper-warm);
+  .tag-cloud { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .topic-tag {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.03em;
+    color: var(--tag-text);
+    background: var(--tag-bg);
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
   }
+  .topic-tag::before { content: '#'; opacity: 0.5; margin-right: 1px; }
+  .topic-tag:hover { color: #fff; background: var(--accent); }
 
-  .pullquote p {
-    font-family: var(--display);
-    font-style: italic;
-    font-size: 1.2rem;
-    line-height: 1.5;
-    color: var(--ink);
-  }
-
-  /* ABOUT */
-  .about-text {
-    font-size: 0.9rem;
-    color: var(--ink-muted);
-    line-height: 1.65;
-    font-style: italic;
-  }
-
-  /* ARTICLE DETAIL VIEW */
-  .article-view {
-    display: none;
-  }
-
-  .article-view.open {
-    display: block;
-  }
-
-  .index-view.hidden {
-    display: none;
-  }
+  /* ================= ARTICLE DETAIL ================= */
+  .article-view { display: none; }
+  .article-view.open { display: block; }
+  .index-view.hidden { display: none; }
 
   .back-btn {
     font-family: var(--mono);
-    font-size: 0.62rem;
-    letter-spacing: 0.15em;
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--accent);
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    margin-bottom: 2rem;
+    margin-bottom: 1.8rem;
     border: none;
     background: none;
     padding: 0;
@@ -357,196 +414,200 @@
 
   .article-header {
     margin-bottom: 2rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 1px solid var(--rule);
+    padding-bottom: 1.4rem;
+    border-bottom: 1px solid var(--border);
   }
-
-  .article-body h2 {
-    font-family: var(--display);
-    font-size: 1.4rem;
-    font-weight: 500;
-    margin: 2rem 0 0.8rem;
-    color: var(--ink);
+  .article-header h1 {
+    font-family: var(--serif);
+    font-size: clamp(1.7rem, 3.2vw, 2.4rem);
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-strong);
+    margin: 0.6rem 0 0.8rem;
   }
-
-  .article-body p {
-    margin-bottom: 1.2rem;
-    font-size: 1.05rem;
-    color: var(--ink);
-  }
-
-  .article-body .math-inline {
+  .article-kicker {
     font-family: var(--mono);
-    font-size: 0.9rem;
-    background: var(--paper-warm);
-    padding: 0.1em 0.35em;
-    border-radius: 2px;
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
     color: var(--accent);
   }
 
-  .write-btn {
-    display: inline-block;
-    font-family: var(--mono);
-    font-size: 0.65rem;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    color: var(--paper);
-    background: var(--ink);
-    padding: 0.6rem 1.4rem;
-    cursor: pointer;
-    border: none;
-    margin-top: 1rem;
-    transition: background 0.15s;
+  .article-body { font-family: var(--serif); font-size: 1.12rem; line-height: 1.8; }
+  .article-body h2 {
+    font-family: var(--serif);
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 2.2rem 0 0.8rem;
+    color: var(--text-strong);
   }
-  .write-btn:hover { background: var(--accent); }
+  .article-body p { margin-bottom: 1.3rem; color: var(--text); }
+  .article-body em { color: var(--text-strong); }
+  .article-body .math-inline {
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    background: var(--bg-soft);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    color: var(--accent);
+  }
 
-  @media (max-width: 700px) {
-    .layout { grid-template-columns: 1fr; }
-    .main-col { border-right: none; padding-right: 0; }
-    .side-col { border-top: 1px solid var(--rule); padding-left: 0; }
-    .article-grid { grid-template-columns: 1fr; }
-    .article-card:nth-child(2n) { padding-left: 0; border-left: none; }
+  /* ================= RESPONSIVE ================= */
+  @media (max-width: 1000px) {
+    .content-grid { grid-template-columns: 1fr; }
+    .panel { position: static; }
+  }
+
+  @media (max-width: 850px) {
+    #sidebar {
+      position: static;
+      width: 100%;
+      height: auto;
+      flex-direction: column;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      padding: 1.8rem 1.5rem;
+    }
+    .sidebar-spacer { display: none; }
+    .nav {
+      margin-top: 1.4rem;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.2rem;
+    }
+    .nav li { margin-bottom: 0; }
+    .nav a { padding: 0.4rem 0.7rem; font-size: 0.72rem; }
+    .sidebar-foot { margin-top: 1.4rem; }
+    #main-wrapper { margin-left: 0; }
+    .content-grid { padding: 1.8rem 1.3rem 4rem; }
   }
 </style>
 </head>
 <body>
 
-<header class="masthead">
-  <div class="masthead-rule-top"></div>
-  <div class="masthead-tagline">An independent journal of formal thought</div>
-  <div class="masthead-title">Mathesis</div>
-  <div class="masthead-subtitle">on metaphysics, mathematics, logic, and the limits of knowledge</div>
-  <nav class="masthead-nav">
-    <a class="active" onclick="showIndex()">Index</a>
-    <a onclick="filterTag('Metaphysics')">Metaphysics</a>
-    <a onclick="filterTag('Logic')">Logic</a>
-    <a onclick="filterTag('Mathematics')">Mathematics</a>
-    <a onclick="filterTag('Epistemology')">Epistemology</a>
-    <a onclick="filterTag('AI')">AI</a>
-    <a onclick="filterTag('Theoretical CS')">Theoretical CS</a>
-  </nav>
-</header>
+<!-- ================= SIDEBAR ================= -->
+<aside id="sidebar">
+  <div class="brand">
+    <div class="brand-avatar" onclick="showIndex()">M</div>
+    <div class="brand-title" onclick="showIndex()">Mathesis</div>
+    <div class="brand-tagline">An independent journal on metaphysics, mathematics, logic &amp; the limits of knowledge.</div>
+  </div>
 
-<div class="layout">
-  <main class="main-col">
+  <ul class="nav" id="nav">
+    <li><a class="active" onclick="showIndex()"><span class="dot"></span>Home</a></li>
+    <li><a onclick="filterTag('Metaphysics')"><span class="dot"></span>Metaphysics</a></li>
+    <li><a onclick="filterTag('Logic')"><span class="dot"></span>Logic</a></li>
+    <li><a onclick="filterTag('Mathematics')"><span class="dot"></span>Mathematics</a></li>
+    <li><a onclick="filterTag('Epistemology')"><span class="dot"></span>Epistemology</a></li>
+    <li><a onclick="filterTag('AI')"><span class="dot"></span>AI</a></li>
+    <li><a onclick="filterTag('Theoretical CS')"><span class="dot"></span>Theoretical CS</a></li>
+  </ul>
 
-    <!-- INDEX VIEW -->
-    <div class="index-view" id="index-view">
-      <div class="section-label">Featured essay</div>
+  <div class="sidebar-spacer"></div>
 
-      <article class="feature-article" onclick="openArticle(0)">
-        <div class="feature-kicker">Modal Logic &middot; Metaphysics</div>
-        <h1 class="feature-title">Possible Worlds and the Ontology of Necessity</h1>
-        <p class="feature-dek">What does it mean for something to be necessarily true? Kripke's semantics gave us a formal handle on modality — but the metaphysical question remains stubbornly open.</p>
-        <div class="feature-meta">Vol. I &mdash; Essay no. 1 &mdash; May 2026</div>
-      </article>
-
-      <div class="section-label">Recent essays</div>
-
-      <div class="article-grid">
-        <article class="article-card" onclick="openArticle(1)">
-          <div class="card-kicker">Epistemology</div>
-          <div class="card-title">The Gettier Problem and the Fragility of Justified Belief</div>
-          <p class="card-excerpt">Three counterexamples that shattered fifty years of consensus on what it means to know something.</p>
-        </article>
-        <article class="article-card" onclick="openArticle(2)">
-          <div class="card-kicker">Model Theory</div>
-          <div class="card-title">Löwenheim–Skolem and the Indeterminacy of Reference</div>
-          <p class="card-excerpt">If every first-order theory has a countable model, what exactly are our mathematical structures picking out?</p>
-        </article>
-        <article class="article-card" onclick="openArticle(3)">
-          <div class="card-kicker">AI &middot; Epistemology</div>
-          <div class="card-title">Do Language Models Understand, or Only Predict?</div>
-          <p class="card-excerpt">The distinction between syntactic manipulation and semantic comprehension, and why it still matters.</p>
-        </article>
-        <article class="article-card" onclick="openArticle(4)">
-          <div class="card-kicker">Theoretical CS</div>
-          <div class="card-title">Computation as Formal Proof: The Curry–Howard Correspondence</div>
-          <p class="card-excerpt">Programs are proofs. Types are propositions. A deep isomorphism that unifies logic and computation.</p>
-        </article>
-        <article class="article-card" onclick="openArticle(5)">
-          <div class="card-kicker">First-Order Logic</div>
-          <div class="card-title">Completeness and Its Discontents</div>
-          <p class="card-excerpt">Gödel proved FOL is complete. Then he proved arithmetic isn't. On the space between syntax and semantics.</p>
-        </article>
-        <article class="article-card" onclick="openArticle(6)">
-          <div class="card-kicker">Metaphysics</div>
-          <div class="card-title">On the Reality of Mathematical Objects</div>
-          <p class="card-excerpt">Are numbers discovered or invented? The Platonist, the formalist, and the fictionalist walk into a seminar room.</p>
-        </article>
-      </div>
+  <div class="sidebar-foot">
+    <div class="epigraph">
+      "Die Welt ist alles, was der Fall ist."
+      <cite>— Wittgenstein, TLP 1</cite>
     </div>
+    <button class="theme-toggle" onclick="toggleTheme()">
+      <span id="theme-icon">☾</span><span id="theme-label">Dark</span>
+    </button>
+  </div>
+</aside>
 
-    <!-- ARTICLE DETAIL VIEW -->
-    <div class="article-view" id="article-view">
-      <button class="back-btn" onclick="showIndex()">&#8592; back to index</button>
-      <div id="article-content"></div>
-    </div>
+<!-- ================= MAIN ================= -->
+<div id="main-wrapper">
+  <div class="content-grid">
 
-  </main>
+    <main class="main-col">
 
-  <aside class="side-col">
+      <!-- INDEX VIEW -->
+      <div class="index-view" id="index-view">
+        <div class="page-head">
+          <h1>Essays</h1>
+          <p>Written to think, not to perform.</p>
+        </div>
 
-    <div class="sidebar-section">
-      <div class="sidebar-heading">About Mathesis</div>
-      <p class="about-text">
-        A personal journal on the formal structure of thought — logic, mathematics, metaphysics, epistemology, and artificial intelligence. Written to think, not to perform.
-      </p>
-      <br>
-      <button class="write-btn" onclick="sendPrompt('Help me write a new post for Mathesis')">+ write a new post ↗</button>
-    </div>
+        <div class="section-label">Featured</div>
+        <article class="post-card feature" onclick="openArticle(0)">
+          <div class="post-card-title">Possible Worlds and the Ontology of Necessity</div>
+          <p class="post-card-excerpt">What does it mean for something to be necessarily true? Kripke's semantics gave us a formal handle on modality — but the metaphysical question remains stubbornly open.</p>
+          <div class="post-meta">
+            <span class="cat">Modal Logic</span>
+            <span class="cat">Metaphysics</span>
+            <span class="sep">·</span>
+            <span>Vol. I — Essay no. 1 — May 2026</span>
+          </div>
+        </article>
 
-    <div class="sidebar-section">
-      <div class="sidebar-heading">Topics</div>
-      <div>
-        <span class="topic-tag" onclick="filterTag('Metaphysics')">Metaphysics</span>
-        <span class="topic-tag" onclick="filterTag('Mathematics')">Mathematics</span>
-        <span class="topic-tag" onclick="filterTag('Logic')">Logic</span>
-        <span class="topic-tag" onclick="filterTag('Modal Logic')">Modal Logic</span>
-        <span class="topic-tag" onclick="filterTag('FOL')">First-Order Logic</span>
-        <span class="topic-tag" onclick="filterTag('Model Theory')">Model Theory</span>
-        <span class="topic-tag" onclick="filterTag('Epistemology')">Epistemology</span>
-        <span class="topic-tag" onclick="filterTag('AI')">AI</span>
-        <span class="topic-tag" onclick="filterTag('Theoretical CS')">Theoretical CS</span>
+        <div class="section-label">Recent essays</div>
+        <div id="post-list"></div>
       </div>
-    </div>
 
-    <div class="sidebar-section">
-      <div class="sidebar-heading">Epigraph</div>
-      <div class="pullquote">
-        <p>"Die Welt ist alles, was der Fall ist."</p>
+      <!-- ARTICLE DETAIL VIEW -->
+      <div class="article-view" id="article-view">
+        <button class="back-btn" onclick="showIndex()">&#8592; back to index</button>
+        <div id="article-content"></div>
       </div>
-      <p style="font-size:0.78rem; color: var(--ink-faint); font-family: var(--mono);">— Wittgenstein, TLP 1</p>
-    </div>
 
-    <div class="sidebar-section">
-      <div class="sidebar-heading">Reading List</div>
-      <div class="recent-item" onclick="sendPrompt('Tell me about Kripke\'s Naming and Necessity')">
-        <div class="recent-kicker">Modal Logic</div>
-        <div class="recent-title">Naming and Necessity — Kripke</div>
-      </div>
-      <div class="recent-item" onclick="sendPrompt('Explain Gödel\'s incompleteness theorems')">
-        <div class="recent-kicker">Mathematics</div>
-        <div class="recent-title">On Formally Undecidable Propositions — Gödel</div>
-      </div>
-      <div class="recent-item" onclick="sendPrompt('Explain the Church-Turing thesis')">
-        <div class="recent-kicker">Theoretical CS</div>
-        <div class="recent-title">Computability and Logic — Boolos, Burgess, Jeffrey</div>
-      </div>
-      <div class="recent-item" onclick="sendPrompt('What is model theory in mathematical logic?')">
-        <div class="recent-kicker">Model Theory</div>
-        <div class="recent-title">Model Theory — Chang & Keisler</div>
-      </div>
-    </div>
+    </main>
 
-  </aside>
+    <!-- ================= RIGHT PANEL ================= -->
+    <aside class="panel">
+      <div class="panel-block">
+        <div class="panel-heading">About Mathesis</div>
+        <p class="about-text">A personal journal on the formal structure of thought — logic, mathematics, metaphysics, epistemology, and artificial intelligence.</p>
+        <button class="write-btn" onclick="sendPrompt('Help me write a new post for Mathesis')">+ Write a new post</button>
+      </div>
+
+      <div class="panel-block">
+        <div class="panel-heading">Reading List</div>
+        <div class="recent-item" onclick="sendPrompt('Tell me about Kripke\'s Naming and Necessity')">
+          <div class="recent-kicker">Modal Logic</div>
+          <div class="recent-title">Naming and Necessity — Kripke</div>
+        </div>
+        <div class="recent-item" onclick="sendPrompt('Explain Gödel\'s incompleteness theorems')">
+          <div class="recent-kicker">Mathematics</div>
+          <div class="recent-title">On Formally Undecidable Propositions — Gödel</div>
+        </div>
+        <div class="recent-item" onclick="sendPrompt('Explain the Church-Turing thesis')">
+          <div class="recent-kicker">Theoretical CS</div>
+          <div class="recent-title">Computability and Logic — Boolos, Burgess, Jeffrey</div>
+        </div>
+        <div class="recent-item" onclick="sendPrompt('What is model theory in mathematical logic?')">
+          <div class="recent-kicker">Model Theory</div>
+          <div class="recent-title">Model Theory — Chang &amp; Keisler</div>
+        </div>
+      </div>
+
+      <div class="panel-block">
+        <div class="panel-heading">Trending Tags</div>
+        <div class="tag-cloud">
+          <span class="topic-tag" onclick="filterTag('Metaphysics')">Metaphysics</span>
+          <span class="topic-tag" onclick="filterTag('Mathematics')">Mathematics</span>
+          <span class="topic-tag" onclick="filterTag('Logic')">Logic</span>
+          <span class="topic-tag" onclick="filterTag('Modal Logic')">Modal Logic</span>
+          <span class="topic-tag" onclick="filterTag('FOL')">First-Order Logic</span>
+          <span class="topic-tag" onclick="filterTag('Model Theory')">Model Theory</span>
+          <span class="topic-tag" onclick="filterTag('Epistemology')">Epistemology</span>
+          <span class="topic-tag" onclick="filterTag('AI')">AI</span>
+          <span class="topic-tag" onclick="filterTag('Theoretical CS')">Theoretical CS</span>
+        </div>
+      </div>
+    </aside>
+
+  </div>
 </div>
 
 <script>
 const articles = [
   {
     kicker: "Modal Logic · Metaphysics",
+    cats: ["Modal Logic", "Metaphysics"],
     title: "Possible Worlds and the Ontology of Necessity",
+    excerpt: "What does it mean for something to be necessarily true? Kripke's semantics gave us a formal handle on modality — but the metaphysical question remains stubbornly open.",
     meta: "Vol. I — Essay no. 1 — May 2026",
     body: `
       <p>There is a puzzle at the heart of modal logic that rarely gets the attention it deserves outside of specialist circles. When we say that <em>2 + 2 = 4</em> is necessarily true, or that it is <em>possible</em> that I might have had coffee instead of tea this morning, we are making claims that seem intuitively clear but are formally treacherous.</p>
@@ -566,7 +627,9 @@ const articles = [
   },
   {
     kicker: "Epistemology",
+    cats: ["Epistemology"],
     title: "The Gettier Problem and the Fragility of Justified Belief",
+    excerpt: "Three counterexamples that shattered fifty years of consensus on what it means to know something.",
     meta: "Vol. I — Essay no. 2 — May 2026",
     body: `
       <p>In 1963, Edmund Gettier published a paper of barely three pages that ended fifty years of quiet consensus. The received view — that knowledge is justified true belief, tracing back at least to Plato's <em>Meno</em> — turned out to be wrong. Or at least, incomplete in a way that matters.</p>
@@ -582,7 +645,9 @@ const articles = [
   },
   {
     kicker: "Model Theory",
+    cats: ["Model Theory"],
     title: "Löwenheim–Skolem and the Indeterminacy of Reference",
+    excerpt: "If every first-order theory has a countable model, what exactly are our mathematical structures picking out?",
     meta: "Vol. I — Essay no. 3 — May 2026",
     body: `
       <p>The Löwenheim–Skolem theorem is one of the most philosophically disquieting results in all of mathematical logic. In its downward form: if a first-order theory has an infinite model, it has a countable model. In its upward form: if it has an infinite model, it has models of every infinite cardinality.</p>
@@ -598,7 +663,9 @@ const articles = [
   },
   {
     kicker: "AI · Epistemology",
+    cats: ["AI", "Epistemology"],
     title: "Do Language Models Understand, or Only Predict?",
+    excerpt: "The distinction between syntactic manipulation and semantic comprehension, and why it still matters.",
     meta: "Vol. I — Essay no. 4 — May 2026",
     body: `
       <p>The question is not new. Searle's Chinese Room argued in 1980 that syntactic manipulation, however sophisticated, never constitutes semantic understanding. The argument was disputed then. It is disputed now. But the disputants are no longer arguing in the abstract — we have systems that actually pass the surface tests.</p>
@@ -614,7 +681,9 @@ const articles = [
   },
   {
     kicker: "Theoretical CS",
+    cats: ["Theoretical CS"],
     title: "Computation as Formal Proof: The Curry–Howard Correspondence",
+    excerpt: "Programs are proofs. Types are propositions. A deep isomorphism that unifies logic and computation.",
     meta: "Vol. I — Essay no. 5 — May 2026",
     body: `
       <p>There is a deep isomorphism running through the foundations of computation and logic, one that took decades to articulate fully. The Curry–Howard correspondence says: propositions are types, proofs are programs, proof normalization is computation.</p>
@@ -632,7 +701,9 @@ const articles = [
   },
   {
     kicker: "First-Order Logic",
+    cats: ["Logic", "FOL"],
     title: "Completeness and Its Discontents",
+    excerpt: "Gödel proved FOL is complete. Then he proved arithmetic isn't. On the space between syntax and semantics.",
     meta: "Vol. I — Essay no. 6 — May 2026",
     body: `
       <p>Gödel's completeness theorem for first-order logic — his doctoral dissertation — is one of the great results of twentieth-century logic. Every valid first-order sentence is provable. Semantics and proof theory coincide, for FOL. This is a beautiful and non-trivial fact.</p>
@@ -648,7 +719,9 @@ const articles = [
   },
   {
     kicker: "Metaphysics",
+    cats: ["Metaphysics"],
     title: "On the Reality of Mathematical Objects",
+    excerpt: "Are numbers discovered or invented? The Platonist, the formalist, and the fictionalist walk into a seminar room.",
     meta: "Vol. I — Essay no. 7 — May 2026",
     body: `
       <p>Here is a question that sounds like it should have a straightforward answer and doesn't: do mathematical objects exist? The number seven — is it real? Where is it? What is it made of? How do we know things about it?</p>
@@ -666,13 +739,29 @@ const articles = [
   }
 ];
 
+// Render the recent-essays list (skip the featured essay at index 0)
+function renderList() {
+  const html = articles.slice(1).map((a, i) => {
+    const idx = i + 1;
+    const cats = a.cats.map(c => `<span class="cat">${c}</span>`).join('');
+    return `
+      <article class="post-card" onclick="openArticle(${idx})">
+        <div class="post-card-title">${a.title}</div>
+        <p class="post-card-excerpt">${a.excerpt}</p>
+        <div class="post-meta">${cats}<span class="sep">·</span><span>${a.meta}</span></div>
+      </article>`;
+  }).join('');
+  document.getElementById('post-list').innerHTML = html;
+}
+renderList();
+
 function openArticle(idx) {
   const a = articles[idx];
   document.getElementById('article-content').innerHTML = `
     <div class="article-header">
-      <div class="feature-kicker">${a.kicker}</div>
-      <h1 class="feature-title" style="font-size:clamp(1.6rem,3vw,2.2rem)">${a.title}</h1>
-      <div class="feature-meta">${a.meta}</div>
+      <div class="article-kicker">${a.kicker}</div>
+      <h1>${a.title}</h1>
+      <div class="post-meta"><span>${a.meta}</span></div>
     </div>
     <div class="article-body">${a.body}</div>
   `;
@@ -684,13 +773,36 @@ function openArticle(idx) {
 function showIndex() {
   document.getElementById('index-view').classList.remove('hidden');
   document.getElementById('article-view').classList.remove('open');
-  document.querySelectorAll('.masthead-nav a').forEach(a => a.classList.remove('active'));
-  document.querySelector('.masthead-nav a').classList.add('active');
+  document.querySelectorAll('#nav a').forEach(a => a.classList.remove('active'));
+  document.querySelector('#nav a').classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function filterTag(tag) {
   sendPrompt(`Show me posts about ${tag} on Mathesis`);
 }
+
+// ===== Theme toggle (persisted + system default) =====
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const dark = theme === 'dark';
+  document.getElementById('theme-icon').textContent = dark ? '☀' : '☾';
+  document.getElementById('theme-label').textContent = dark ? 'Light' : 'Dark';
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('mathesis-theme', next); } catch (e) {}
+  applyTheme(next);
+}
+(function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem('mathesis-theme'); } catch (e) {}
+  if (!saved) {
+    saved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  applyTheme(saved);
+})();
 </script>
 </body>
 </html>
