@@ -491,17 +491,16 @@
   <div class="brand">
     <div class="brand-avatar" onclick="showIndex()">M</div>
     <div class="brand-title" onclick="showIndex()">Mathesis</div>
-    <div class="brand-tagline">An independent journal on metaphysics, mathematics, logic &amp; the limits of knowledge.</div>
+    <div class="brand-tagline">On formal systems, embedded computing, and the philosophy of mind &amp; science.</div>
   </div>
 
   <ul class="nav" id="nav">
     <li><a class="active" onclick="showIndex()"><span class="dot"></span>Home</a></li>
-    <li><a onclick="filterTag('Metaphysics')"><span class="dot"></span>Metaphysics</a></li>
-    <li><a onclick="filterTag('Logic')"><span class="dot"></span>Logic</a></li>
-    <li><a onclick="filterTag('Mathematics')"><span class="dot"></span>Mathematics</a></li>
-    <li><a onclick="filterTag('Epistemology')"><span class="dot"></span>Epistemology</a></li>
-    <li><a onclick="filterTag('AI')"><span class="dot"></span>AI</a></li>
-    <li><a onclick="filterTag('Theoretical CS')"><span class="dot"></span>Theoretical CS</a></li>
+    <li><a onclick="filterTag('Embedded Systems')"><span class="dot"></span>Embedded Systems</a></li>
+    <li><a onclick="filterTag('HPC')"><span class="dot"></span>HPC</a></li>
+    <li><a onclick="filterTag('AI / Autonomy')"><span class="dot"></span>AI / Autonomy</a></li>
+    <li><a onclick="filterTag('Algorithms &amp; Theory')"><span class="dot"></span>Algorithms &amp; Theory</a></li>
+    <li><a onclick="filterTag('Philosophy')"><span class="dot"></span>Philosophy</a></li>
   </ul>
 
   <div class="sidebar-spacer"></div>
@@ -532,13 +531,13 @@
 
         <div class="section-label">Featured</div>
         <article class="post-card feature" onclick="openArticle(0)">
-          <div class="post-card-title">Possible Worlds and the Ontology of Necessity</div>
-          <p class="post-card-excerpt">What does it mean for something to be necessarily true? Kripke's semantics gave us a formal handle on modality — but the metaphysical question remains stubbornly open.</p>
+          <div class="post-card-title">Reinforcement Learning on the Edge: Control Loops Without a Cloud</div>
+          <p class="post-card-excerpt">A learned policy running inside a hard real-time loop on a microcontroller. Where control theory, RL, and embedded determinism collide — and why the interesting engineering lives in the seams.</p>
           <div class="post-meta">
-            <span class="cat">Modal Logic</span>
-            <span class="cat">Metaphysics</span>
+            <span class="cat">AI / Autonomy</span>
+            <span class="cat">Embedded Systems</span>
             <span class="sep">·</span>
-            <span>Vol. I — Essay no. 1 — May 2026</span>
+            <span>Vol. I — Essay no. 1 — July 2026</span>
           </div>
         </article>
 
@@ -564,36 +563,48 @@
 
       <div class="panel-block">
         <div class="panel-heading">Reading List</div>
+        <div class="recent-item" onclick="sendPrompt('Explain hard real-time scheduling and rate-monotonic analysis')">
+          <div class="recent-kicker">Embedded</div>
+          <div class="recent-title">Hard Real-Time Computing Systems — Buttazzo</div>
+        </div>
+        <div class="recent-item" onclick="sendPrompt('Explain reinforcement learning fundamentals')">
+          <div class="recent-kicker">AI / Autonomy</div>
+          <div class="recent-title">Reinforcement Learning: An Introduction — Sutton &amp; Barto</div>
+        </div>
+        <div class="recent-item" onclick="sendPrompt('Introduce me to parallel and high performance computing')">
+          <div class="recent-kicker">HPC</div>
+          <div class="recent-title">Introduction to Parallel Computing — Grama et al.</div>
+        </div>
+        <div class="recent-item" onclick="sendPrompt('Explain the Curry-Howard correspondence and type theory')">
+          <div class="recent-kicker">Algorithms &amp; Theory</div>
+          <div class="recent-title">Types and Programming Languages — Pierce</div>
+        </div>
         <div class="recent-item" onclick="sendPrompt('Tell me about Kripke\'s Naming and Necessity')">
-          <div class="recent-kicker">Modal Logic</div>
+          <div class="recent-kicker">Philosophy</div>
           <div class="recent-title">Naming and Necessity — Kripke</div>
-        </div>
-        <div class="recent-item" onclick="sendPrompt('Explain Gödel\'s incompleteness theorems')">
-          <div class="recent-kicker">Mathematics</div>
-          <div class="recent-title">On Formally Undecidable Propositions — Gödel</div>
-        </div>
-        <div class="recent-item" onclick="sendPrompt('Explain the Church-Turing thesis')">
-          <div class="recent-kicker">Theoretical CS</div>
-          <div class="recent-title">Computability and Logic — Boolos, Burgess, Jeffrey</div>
-        </div>
-        <div class="recent-item" onclick="sendPrompt('What is model theory in mathematical logic?')">
-          <div class="recent-kicker">Model Theory</div>
-          <div class="recent-title">Model Theory — Chang &amp; Keisler</div>
         </div>
       </div>
 
       <div class="panel-block">
         <div class="panel-heading">Trending Tags</div>
         <div class="tag-cloud">
-          <span class="topic-tag" onclick="filterTag('Metaphysics')">Metaphysics</span>
-          <span class="topic-tag" onclick="filterTag('Mathematics')">Mathematics</span>
-          <span class="topic-tag" onclick="filterTag('Logic')">Logic</span>
-          <span class="topic-tag" onclick="filterTag('Modal Logic')">Modal Logic</span>
-          <span class="topic-tag" onclick="filterTag('FOL')">First-Order Logic</span>
-          <span class="topic-tag" onclick="filterTag('Model Theory')">Model Theory</span>
-          <span class="topic-tag" onclick="filterTag('Epistemology')">Epistemology</span>
-          <span class="topic-tag" onclick="filterTag('AI')">AI</span>
-          <span class="topic-tag" onclick="filterTag('Theoretical CS')">Theoretical CS</span>
+          <span class="topic-tag" onclick="filterTag('embedded')">embedded</span>
+          <span class="topic-tag" onclick="filterTag('rtos')">rtos</span>
+          <span class="topic-tag" onclick="filterTag('control')">control</span>
+          <span class="topic-tag" onclick="filterTag('automation')">automation</span>
+          <span class="topic-tag" onclick="filterTag('autonomous-systems')">autonomous-systems</span>
+          <span class="topic-tag" onclick="filterTag('hpc')">hpc</span>
+          <span class="topic-tag" onclick="filterTag('parallelism')">parallelism</span>
+          <span class="topic-tag" onclick="filterTag('reinforcement-learning')">reinforcement-learning</span>
+          <span class="topic-tag" onclick="filterTag('algorithms')">algorithms</span>
+          <span class="topic-tag" onclick="filterTag('complexity')">complexity</span>
+          <span class="topic-tag" onclick="filterTag('type-theory')">type-theory</span>
+          <span class="topic-tag" onclick="filterTag('logic')">logic</span>
+          <span class="topic-tag" onclick="filterTag('ontology')">ontology</span>
+          <span class="topic-tag" onclick="filterTag('metaphysics')">metaphysics</span>
+          <span class="topic-tag" onclick="filterTag('phil-science')">phil-science</span>
+          <span class="topic-tag" onclick="filterTag('phil-mind')">phil-mind</span>
+          <span class="topic-tag" onclick="filterTag('phil-language')">phil-language</span>
         </div>
       </div>
     </aside>
@@ -604,66 +615,72 @@
 <script>
 const articles = [
   {
-    kicker: "Modal Logic · Metaphysics",
-    cats: ["Modal Logic", "Metaphysics"],
-    title: "Possible Worlds and the Ontology of Necessity",
-    excerpt: "What does it mean for something to be necessarily true? Kripke's semantics gave us a formal handle on modality — but the metaphysical question remains stubbornly open.",
-    meta: "Vol. I — Essay no. 1 — May 2026",
+    kicker: "AI / Autonomy · Embedded Systems",
+    cats: ["AI / Autonomy", "Embedded Systems"],
+    title: "Reinforcement Learning on the Edge: Control Loops Without a Cloud",
+    excerpt: "A learned policy running inside a hard real-time loop on a microcontroller. Where control theory, RL, and embedded determinism collide — and why the interesting engineering lives in the seams.",
+    meta: "Vol. I — Essay no. 1 — July 2026",
     body: `
-      <p>There is a puzzle at the heart of modal logic that rarely gets the attention it deserves outside of specialist circles. When we say that <em>2 + 2 = 4</em> is necessarily true, or that it is <em>possible</em> that I might have had coffee instead of tea this morning, we are making claims that seem intuitively clear but are formally treacherous.</p>
+      <p>There is a fashionable picture of autonomous systems in which a powerful model sits in the cloud, ingests sensor streams, and sends back commands. It is a fine picture for a warehouse robot with reliable Wi-Fi. It is useless for a quadrotor stabilizing itself at 1&nbsp;kHz, where a 40&nbsp;ms round trip is not latency — it is a crash.</p>
 
-      <h2>Kripke Semantics, Briefly</h2>
-      <p>Kripke's possible worlds semantics gives us an elegant formal handle on this. A modal frame is a pair <span class="math-inline">(W, R)</span> where <span class="math-inline">W</span> is a set of possible worlds and <span class="math-inline">R ⊆ W × W</span> is an accessibility relation. A proposition <span class="math-inline">□φ</span> (necessarily φ) holds at world <span class="math-inline">w</span> iff φ holds at every world <span class="math-inline">w'</span> accessible from <span class="math-inline">w</span>.</p>
+      <p>What interests me is the harder regime: a <em>learned</em> policy that has to live <em>inside</em> the real-time loop, on a microcontroller, next to the actuators.</p>
 
-      <p>This is clean. It validates our intuitions: logical truths come out necessary, and contingent facts turn out possible. Different constraints on <span class="math-inline">R</span> — reflexivity, transitivity, symmetry — yield different modal systems: T, S4, S5.</p>
+      <h2>Three fields, one loop</h2>
+      <p>Classical control gives us the guarantees: a well-tuned <span class="math-inline">LQR</span> or PID has provable stability margins. Reinforcement learning gives us adaptivity: a policy <span class="math-inline">π(a|s)</span> can exploit dynamics we never bothered to model. Embedded engineering gives us the brutal constraint: fixed memory, no allocator in the hot path, and a deadline that is a correctness property, not a performance target.</p>
 
-      <h2>The Metaphysical Question Remains</h2>
-      <p>But here's where I want to push back on the formalist satisfaction that often follows. The semantics tells us <em>when</em> modal claims are true relative to a structure. It does not tell us what possible worlds <em>are</em>.</p>
+      <p>The naive move — train a big network offline, deploy it — collides with all three. A policy that occasionally takes 8&nbsp;ms to evaluate has, in effect, an unbounded worst-case execution time from the scheduler's point of view.</p>
 
-      <p>David Lewis thought they were real, concrete entities — as real as this world, differing only in lacking spatiotemporal contact with us. This is modal realism, and it is admirably serious about taking the semantics at face value. But the ontological cost is enormous: we must believe in an uncountably infinite plurality of concrete universes.</p>
+      <h2>Designing for the seam</h2>
+      <p>The engineering lives in the seam between the learned and the guaranteed. A pattern I keep returning to: let RL shape a <em>reference</em> or a set of gains, and let a small, verified control law do the actual actuation. The learned component runs at a slower, best-effort rate; the inner loop stays deterministic and provably bounded. If the policy stalls or produces nonsense, the inner controller degrades gracefully to a safe default.</p>
 
-      <p>The alternatives — ersatzism, fictionalism, actualism — all struggle to give the quantifiers over possible worlds their full semantic weight without the metaphysical extravagance. This is not a defect of the logic. It is a sign that the logic has done its job and handed the question back to philosophy.</p>
+      <p>This is not a compromise so much as a division of epistemic labor. We put the parts we can prove things about where the deadlines are hard, and the parts we can only measure where we can afford to be wrong occasionally.</p>
+
+      <p>The philosophical residue is the same one that runs through everything here: a system is trustworthy not because every component is understood, but because its <em>failure modes</em> are.</p>
     `
   },
   {
-    kicker: "Epistemology",
-    cats: ["Epistemology"],
-    title: "The Gettier Problem and the Fragility of Justified Belief",
-    excerpt: "Three counterexamples that shattered fifty years of consensus on what it means to know something.",
-    meta: "Vol. I — Essay no. 2 — May 2026",
+    kicker: "Embedded Systems",
+    cats: ["Embedded Systems"],
+    title: "Deterministic Latency: Why RTOS Scheduling Is a Correctness Property",
+    excerpt: "In a hard real-time system a late answer is a wrong answer. On rate-monotonic analysis and treating time as a first-class specification.",
+    meta: "Vol. I — Essay no. 2 — July 2026",
     body: `
-      <p>In 1963, Edmund Gettier published a paper of barely three pages that ended fifty years of quiet consensus. The received view — that knowledge is justified true belief, tracing back at least to Plato's <em>Meno</em> — turned out to be wrong. Or at least, incomplete in a way that matters.</p>
+      <p>Most software treats time as a performance concern: faster is better, slow is annoying. In a hard real-time embedded system this framing is a category error. A control command that is correct but arrives 2&nbsp;ms after the deadline has already failed. Time is not a quality metric here — it is part of the specification.</p>
 
-      <h2>The Structure of a Gettier Case</h2>
-      <p>The machinery is elegant in its subversion. Suppose you have a justified belief that <span class="math-inline">p</span>, and <span class="math-inline">p</span> entails <span class="math-inline">q</span>. You come to believe <span class="math-inline">q</span> on the basis of <span class="math-inline">p</span>. As it happens, <span class="math-inline">p</span> is false — but <span class="math-inline">q</span> is true for entirely independent reasons. You have a justified true belief in <span class="math-inline">q</span>. You do not know <span class="math-inline">q</span>.</p>
+      <h2>Rate-monotonic analysis</h2>
+      <p>The foundational result is Liu and Layland's: for <span class="math-inline">n</span> periodic tasks under fixed-priority preemptive scheduling, assigning higher priority to shorter periods (rate-monotonic) is optimal, and the task set is schedulable if total utilization stays below <span class="math-inline">n(2^{1/n} - 1)</span> — about 69% in the limit.</p>
 
-      <p>The justification and the truth fail to be connected in the right way. This is the core insight. Knowledge is not just a matter of having the right belief with the right reasons — the reasons must be reasons for the right thing.</p>
+      <p>That 69% surprises people. You cannot load the CPU to 100% and expect deadlines to hold; the headroom is the price of provable timeliness. This is a bound you design <em>toward</em>, not a number you discover afterward in a profiler.</p>
 
-      <h2>What Follows</h2>
-      <p>Responses to Gettier have multiplied: add a fourth condition (no false lemmas), require reliable processes (reliabilism), invoke a causal condition, appeal to sensitivity or safety. None has achieved consensus. This is either a sign that the concept of knowledge is irreducibly complex, or that we have been asking the wrong question all along.</p>
+      <h2>Determinism over throughput</h2>
+      <p>The consequence reshapes the whole codebase. No unbounded loops in an ISR. No dynamic allocation in the hot path. Interrupt latency measured and bounded, not assumed. Priority inversion handled explicitly with inheritance or ceiling protocols — the bug that stalled Mars Pathfinder was exactly this.</p>
+
+      <p>What I find elegant is that this pushes timing into the type of thing you can <em>reason about statically</em>, the way we reason about memory safety. The worst-case execution time becomes a claim you defend, not a hope you hold.</p>
     `
   },
   {
-    kicker: "Model Theory",
-    cats: ["Model Theory"],
-    title: "Löwenheim–Skolem and the Indeterminacy of Reference",
-    excerpt: "If every first-order theory has a countable model, what exactly are our mathematical structures picking out?",
-    meta: "Vol. I — Essay no. 3 — May 2026",
+    kicker: "HPC · Algorithms & Theory",
+    cats: ["HPC", "Algorithms & Theory"],
+    title: "Cache-Oblivious Algorithms and the Memory Wall",
+    excerpt: "The bottleneck stopped being FLOPs decades ago. On designing algorithms whose locality is optimal without ever naming the cache size.",
+    meta: "Vol. I — Essay no. 3 — July 2026",
     body: `
-      <p>The Löwenheim–Skolem theorem is one of the most philosophically disquieting results in all of mathematical logic. In its downward form: if a first-order theory has an infinite model, it has a countable model. In its upward form: if it has an infinite model, it has models of every infinite cardinality.</p>
+      <p>The dirty secret of high performance computing is that arithmetic is essentially free and memory is essentially everything. A modern core can do dozens of floating-point operations in the time it takes to fetch one cache line from main memory. The <em>memory wall</em> is not a metaphor — it is the wall you actually hit.</p>
 
-      <h2>The Skolem Paradox</h2>
-      <p>Here is what makes this disturbing. Cantor proved that the real numbers are uncountable. Set theory proves this. But set theory is a first-order theory, and Löwenheim–Skolem guarantees it has a countable model — one in which the "real numbers" are countable from outside the model, even though the model itself cannot establish a bijection with the naturals.</p>
+      <h2>Locality as the real currency</h2>
+      <p>Once you internalize this, algorithm analysis in the abstract RAM model — counting operations, ignoring where data lives — starts to feel like counting the wrong thing. Two algorithms with identical <span class="math-inline">O(n log n)</span> operation counts can differ by an order of magnitude in wall-clock time purely from locality.</p>
 
-      <p>This is not a contradiction. It is a <em>relativity of set-theoretic concepts to models</em>. What counts as uncountable depends on which functions are available in the model. The theorem does not show set theory is inconsistent — it shows that first-order theories cannot pin down their intended models.</p>
+      <h2>The cache-oblivious trick</h2>
+      <p>The beautiful idea, due to Frigo, Leiserson and others, is the <em>cache-oblivious</em> algorithm: one that achieves asymptotically optimal cache performance for <em>every</em> level of the memory hierarchy simultaneously, without the algorithm ever mentioning the block size <span class="math-inline">B</span> or cache size <span class="math-inline">M</span>.</p>
 
-      <h2>On Reference</h2>
-      <p>Putnam weaponized this against metaphysical realism. If our best theories underdetermine their models, in what sense does language hook onto the world? The indeterminacy is not merely epistemic — it seems to be built into the formal structure of reference itself.</p>
+      <p>The mechanism is recursive divide-and-conquer. Recursively halving a matrix multiplication or a transpose means that, at some level of recursion, the subproblem fits in cache — and the recursion structure guarantees this happens at the right granularity for L1, L2, and L3 at once, with no tuning parameters.</p>
+
+      <p>It is one of my favorite results in all of systems because it is genuinely a <em>theorem</em> about a messy engineering reality. The hierarchy is complicated and vendor-specific; the algorithm is simple and portable, and it wins anyway.</p>
     `
   },
   {
-    kicker: "AI · Epistemology",
-    cats: ["AI", "Epistemology"],
+    kicker: "AI / Autonomy · Philosophy",
+    cats: ["AI / Autonomy", "Philosophy"],
     title: "Do Language Models Understand, or Only Predict?",
     excerpt: "The distinction between syntactic manipulation and semantic comprehension, and why it still matters.",
     meta: "Vol. I — Essay no. 4 — May 2026",
@@ -680,8 +697,8 @@ const articles = [
     `
   },
   {
-    kicker: "Theoretical CS",
-    cats: ["Theoretical CS"],
+    kicker: "Algorithms & Theory",
+    cats: ["Algorithms & Theory"],
     title: "Computation as Formal Proof: The Curry–Howard Correspondence",
     excerpt: "Programs are proofs. Types are propositions. A deep isomorphism that unifies logic and computation.",
     meta: "Vol. I — Essay no. 5 — May 2026",
@@ -700,8 +717,8 @@ const articles = [
     `
   },
   {
-    kicker: "First-Order Logic",
-    cats: ["Logic", "FOL"],
+    kicker: "Algorithms & Theory · Philosophy",
+    cats: ["Algorithms & Theory", "Philosophy"],
     title: "Completeness and Its Discontents",
     excerpt: "Gödel proved FOL is complete. Then he proved arithmetic isn't. On the space between syntax and semantics.",
     meta: "Vol. I — Essay no. 6 — May 2026",
@@ -718,8 +735,8 @@ const articles = [
     `
   },
   {
-    kicker: "Metaphysics",
-    cats: ["Metaphysics"],
+    kicker: "Philosophy",
+    cats: ["Philosophy"],
     title: "On the Reality of Mathematical Objects",
     excerpt: "Are numbers discovered or invented? The Platonist, the formalist, and the fictionalist walk into a seminar room.",
     meta: "Vol. I — Essay no. 7 — May 2026",
@@ -735,6 +752,26 @@ const articles = [
       <p>Fictionalism says mathematical statements are false, strictly speaking, but useful fictions. This is honest but philosophically costly — it makes the mathematician's practice look like a kind of systematic pretence.</p>
 
       <p>My own sympathies oscillate. The structuralist position — that mathematics is about structures, not individual objects — seems to me to make real progress. What matters is not the specific objects but the relations that hold among them. But I am not sure this dissolves the ontological question so much as displace it.</p>
+    `
+  },
+  {
+    kicker: "Algorithms & Theory",
+    cats: ["Algorithms & Theory"],
+    title: "P vs NP and the Limits of Efficient Proof",
+    excerpt: "The question is not whether hard problems exist, but whether finding a solution is fundamentally harder than checking one. Half a century on, we cannot even prove the obvious.",
+    meta: "Vol. I — Essay no. 8 — July 2026",
+    body: `
+      <p>Some open problems are hard because we lack a clever trick. <span class="math-inline">P</span> vs <span class="math-inline">NP</span> is hard in a more unsettling way: we cannot prove a statement that essentially everyone believes, and we have decent reasons to think our current tools are <em>provably</em> incapable of proving it.</p>
+
+      <h2>The asymmetry at the heart of it</h2>
+      <p>The class <span class="math-inline">P</span> is problems solvable in polynomial time. <span class="math-inline">NP</span> is problems whose solutions can be <em>verified</em> in polynomial time. Every Sudoku solver knows the intuition: checking a filled grid is trivial; producing one may not be. <span class="math-inline">P = NP</span> would say that intuition is an illusion — that efficient checking always implies efficient finding.</p>
+
+      <p>Cook and Levin gave the question its spine with <span class="math-inline">NP</span>-completeness: a single problem, SAT, such that if it has a polynomial algorithm, <em>everything</em> in NP does. Thousands of problems across scheduling, routing, and optimization are now known to be equivalent in this precise sense.</p>
+
+      <h2>Why the meta-question bites</h2>
+      <p>What fascinates me is the second-order result. Relativization (Baker–Gill–Solovay) and natural proofs (Razborov–Rudich) are two barriers showing that whole <em>families</em> of proof techniques cannot resolve the question. We have not just failed to find a proof — we have proven that certain kinds of proof cannot exist.</p>
+
+      <p>So the difficulty is not merely technical. It sits at the boundary between computation and epistemology: a question about the limits of efficient knowledge that also seems to strain the limits of what we can efficiently <em>prove about</em> knowledge. That reflexivity — a formal system reasoning about the reach of formal reasoning — is exactly the terrain this journal keeps circling back to.</p>
     `
   }
 ];
