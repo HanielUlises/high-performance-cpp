@@ -1,0 +1,61 @@
+---
+title: High Performance
+sidebar_label: Overview
+sidebar_position: 0
+description: Cost models above the asymptotic one — memory hierarchy, layout, vector execution, and the machine models concurrency is written against.
+---
+
+# High Performance
+
+Asymptotic complexity is necessary and insufficient. This part supplies the cost models that
+explain why two algorithms with identical operation counts differ by an order of magnitude.
+
+## The machine as a cost model
+
+A modern core issues several floating-point operations per cycle and waits hundreds of cycles
+for a value from main memory. The ratio is the central fact of performance engineering: a
+computation is *compute-bound* when it has enough arithmetic per byte to keep the units busy,
+and *memory-bound* otherwise, and almost all numerical code is memory-bound unless
+deliberately restructured.
+
+The quantity that decides is arithmetic intensity,
+
+$$
+I = \frac{\text{floating-point operations}}{\text{bytes moved between memory and cache}},
+$$
+
+and the roofline bound on achievable throughput is
+
+$$
+P \le \min\big( P_{\max},\; I \cdot B \big),
+$$
+
+with $P_{\max}$ the peak floating-point rate and $B$ the achievable bandwidth. A kernel with
+$I = 0.25$ flop/byte on a machine with $B = 100$ GB/s cannot exceed 25 GFLOP/s regardless of
+its vectorization, and the only remedy is to raise $I$ — which is an algorithmic change.
+
+## Entries
+
+| Entry | Subject |
+| --- | --- |
+| [Computational Complexity](/docs/high-performance/computational-complexity) | Cost models, their assumptions, and where each is predictive |
+| [Memory](/docs/high-performance/memory) | The hierarchy, latency and bandwidth, TLB, NUMA |
+| [Cache Locality](/docs/high-performance/cache-locality) | Transfer counts, blocking, and the ideal-cache model |
+| [Data Layout](/docs/high-performance/data-layout) | AoS, SoA, tiling, padding, alignment |
+| [SIMD](/docs/high-performance/simd) | Vector registers, instruction sets, portable abstractions |
+| [Vectorization](/docs/high-performance/vectorization) | What blocks a vectorizer, and how loops are written so it does not |
+| [Parallelism](/docs/high-performance/parallelism) | Decomposition, scheduling, scaling laws |
+| [Concurrency](/docs/high-performance/concurrency) | The C++ memory model, atomics, synchronisation cost |
+| [GPU Computing](/docs/high-performance/gpu-computing) | Throughput architectures and the code shapes they require |
+
+## Method
+
+Every claim in this part is stated with the model that produced it and, where a measurement
+appears, with the machine that produced it. The measurement discipline is in
+[Conventions](/docs/conventions), and the reported results are in
+[Benchmarks](/docs/benchmarks).
+
+The order of work assumed throughout is: fix the algorithm and its asymptotic cost; fix the
+data layout; establish whether the kernel is compute- or memory-bound; then optimise for the
+binding constraint. Reversing the order — vectorizing a kernel whose limit is bandwidth, for
+instance — produces effort without result, and is the most common failure in performance work.

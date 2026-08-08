@@ -1,0 +1,262 @@
+---
+title: Optimization
+sidebar_label: Optimization
+sidebar_position: 5
+description: Convexity, optimality conditions, and the convergence rates that determine the cost of descent methods.
+---
+
+# Optimization
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts allow objective, gradient and Hessian requirements to be separated, so a solver states exactly what it needs.'},
+    {std: 'C++23', note: 'std::expected gives a return type for solvers that terminate without convergence.', paper: 'P0323R12'},
+    {std: 'C++26', note: 'std::linalg supplies the dense algebra used inside quasi-Newton updates.', paper: 'P1673R13'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="The problem">
+Given $f : \mathbb{R}^n \to \mathbb{R}$ and a feasible set $\Omega \subseteq \mathbb{R}^n$,
+$$
+\min_{x \in \Omega} f(x).
+$$
+A point $x^\*$ is a local minimiser when $f(x^\*) \le f(x)$ for all feasible $x$ in a
+neighbourhood, and a global minimiser when the inequality holds on all of $\Omega$.
+</Definition>
+
+<Definition title="Convexity">
+$\Omega$ is convex when $\lambda x + (1-\lambda) y \in \Omega$ for all $x, y \in \Omega$ and
+$\lambda \in [0,1]$. $f$ is convex on a convex $\Omega$ when
+$$
+f(\lambda x + (1-\lambda)y) \le \lambda f(x) + (1-\lambda) f(y),
+$$
+and $\mu$-strongly convex when $f - \tfrac{\mu}{2}\lVert \cdot \rVert^2$ is convex.
+</Definition>
+
+For convex problems every local minimiser is global, which is the property that makes convex
+optimisation tractable and its absence that makes the general case hard.
+
+## Motivation
+
+Optimisation appears in this reference in two roles. It is a computational problem in its own
+right — model fitting, optimal control, inverse problems — and it is the mechanism by which
+many other problems are solved: a nonlinear system by minimising the residual norm, a
+projection by minimising distance, an eigenvalue by minimising a Rayleigh quotient.
+
+The design question in every case is which derivative information to require. A method using
+only $f$ converges slowly and applies everywhere; a method using $\nabla f$ converges linearly
+with a rate set by the conditioning; a method using $\nabla^2 f$ converges quadratically near
+the solution and costs $\Theta(n^3)$ per step. The cost of *supplying* derivatives is a
+separate question answered by
+[Automatic Differentiation](/docs/scientific-computing/automatic-differentiation).
+
+## Formal formulation
+
+For unconstrained smooth problems, the conditions are
+
+$$
+\nabla f(x^\*) = 0 \quad \text{(first order, necessary)}, \qquad
+\nabla^2 f(x^\*) \succeq 0 \quad \text{(second order, necessary)},
+$$
+
+with $\nabla^2 f(x^\*) \succ 0$ together with the first condition sufficient for a strict
+local minimum.
+
+For constrained problems with $g_i(x) \le 0$ and $h_j(x) = 0$, the Karush–Kuhn–Tucker
+conditions hold at a local minimiser satisfying a constraint qualification:
+
+$$
+\nabla f(x^\*) + \sum_i \lambda_i \nabla g_i(x^\*) + \sum_j \nu_j \nabla h_j(x^\*) = 0,
+$$
+$$
+g_i(x^\*) \le 0, \quad h_j(x^\*) = 0, \quad \lambda_i \ge 0, \quad \lambda_i g_i(x^\*) = 0.
+$$
+
+Convergence rates for the standard first-order methods on an $L$-smooth objective, with
+$\kappa = L/\mu$ for the strongly convex case:
+
+| Method | Assumptions | Rate |
+| --- | --- | --- |
+| Gradient descent | convex, $L$-smooth | $f(x_k) - f^\* = O(1/k)$ |
+| Gradient descent | $\mu$-strongly convex | $O\big((1 - 1/\kappa)^k\big)$ |
+| Nesterov acceleration | convex, $L$-smooth | $O(1/k^2)$ |
+| Nesterov acceleration | $\mu$-strongly convex | $O\big((1 - 1/\sqrt{\kappa})^k\big)$ |
+| Newton | $\nabla^2 f$ Lipschitz, near $x^\*$ | quadratic |
+| BFGS | smooth, Wolfe line search | superlinear |
+
+The $\sqrt{\kappa}$ in the accelerated rate is optimal for first-order methods on this class,
+by a lower bound of Nemirovski and Yudin; no first-order method does better without further
+structure.
+
+## C++ representation
+
+Requirements separated by the derivative order a method needs:
+
+```cpp
+#include <concepts>
+#include <span>
+
+namespace hpc {
+
+template <class F>
+concept Objective = requires(const F& f, std::span<const double> x) {
+    { f.value(x) } -> std::convertible_to<double>;
+    { f.dimension() } -> std::convertible_to<std::size_t>;
+};
+
+template <class F>
+concept DifferentiableObjective = Objective<F> &&
+    requires(const F& f, std::span<const double> x, std::span<double> g) {
+        f.gradient(x, g);          // g ← ∇f(x)
+    };
+
+template <class F>
+concept TwiceDifferentiableObjective = DifferentiableObjective<F> &&
+    requires(const F& f, std::span<const double> x, std::span<double> v,
+             std::span<double> hv) {
+        f.hessian_vector(x, v, hv);   // hv ← ∇²f(x) v
+    };
+
+}  // namespace hpc
+```
+
+Requiring only a Hessian–vector product, rather than the Hessian itself, is the difference
+between an $\Theta(n^2)$ storage requirement and an $\Theta(n)$ one, and it is what makes
+truncated-Newton methods applicable at large $n$. The product is computable exactly by
+forward-over-reverse automatic differentiation at a small multiple of the cost of $f$.
+
+## Implementation
+
+Gradient descent with a backtracking line search satisfying the Armijo condition:
+
+```cpp
+#include <cmath>
+#include <cstddef>
+#include <span>
+#include <vector>
+
+namespace hpc {
+
+struct descent_result {
+    std::size_t iterations;
+    double objective;
+    double gradient_norm;
+    bool converged;
+};
+
+// Armijo backtracking: accept the first step satisfying
+//   f(x + t d) ≤ f(x) + c₁ t ∇f(x)ᵀd,  c₁ ∈ (0, 1).
+template <DifferentiableObjective F>
+descent_result gradient_descent(const F& f, std::span<double> x,
+                                double tolerance, std::size_t max_iterations)
+{
+    const std::size_t n = x.size();
+    std::vector<double> g(n), trial(n);
+
+    for (std::size_t k = 0; k < max_iterations; ++k) {
+        f.gradient(x, g);
+
+        double gg = 0.0;
+        for (std::size_t i = 0; i < n; ++i) { gg += g[i] * g[i]; }
+        const double gnorm = std::sqrt(gg);
+        const double fx = f.value(x);
+
+        if (gnorm <= tolerance) { return {k, fx, gnorm, true}; }
+
+        double t = 1.0;
+        constexpr double c1 = 1e-4;
+        constexpr double shrink = 0.5;
+        for (int backtrack = 0; backtrack < 50; ++backtrack) {
+            for (std::size_t i = 0; i < n; ++i) { trial[i] = x[i] - t * g[i]; }
+            if (f.value(trial) <= fx - c1 * t * gg) { break; }
+            t *= shrink;
+        }
+
+        for (std::size_t i = 0; i < n; ++i) { x[i] -= t * g[i]; }
+    }
+
+    f.gradient(x, g);
+    double gg = 0.0;
+    for (std::size_t i = 0; i < n; ++i) { gg += g[i] * g[i]; }
+    return {max_iterations, f.value(x), std::sqrt(gg), false};
+}
+
+}  // namespace hpc
+```
+
+The line search is the part that makes the method robust; a fixed step size requires
+knowledge of $L$ and fails silently when the estimate is wrong. The Armijo condition alone
+guarantees sufficient decrease; adding the curvature (Wolfe) condition is required for the
+BFGS update to preserve positive definiteness.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Gradient descent step', time: 'Θ(n) + cost(∇f)', space: 'Θ(n)', note: 'Plus line-search evaluations'},
+    {operation: 'Iterations to ε, strongly convex', time: 'Θ(κ log(1/ε))', space: 'Θ(n)', note: 'κ = L/μ'},
+    {operation: 'Accelerated, strongly convex', time: 'Θ(√κ log(1/ε))', space: 'Θ(n)', note: 'Optimal for first-order'},
+    {operation: 'Newton step, dense Hessian', time: 'Θ(n³)', space: 'Θ(n²)', note: 'Cholesky of ∇²f'},
+    {operation: 'Truncated Newton step', time: 'Θ(m · cost(Hv))', space: 'Θ(n)', note: 'm CG iterations, no Hessian stored'},
+    {operation: 'L-BFGS step, memory m', time: 'Θ(mn)', space: 'Θ(mn)', note: 'Typically m = 5–20'},
+  ]}
+  unit="n variables"
+/>
+
+## Performance considerations
+
+For large $n$, the storage of curvature information decides feasibility before speed does.
+L-BFGS with $m = 10$ stores $20n$ doubles against $n^2$ for a dense Hessian; at $n = 10^6$
+that is $160$ MB against $8$ TB.
+
+Per-iteration cost is usually dominated by the objective and gradient evaluation rather than
+by the optimiser's linear algebra, which means the profitable optimisations are in the user's
+function: vectorizing the residual evaluation, reusing factorizations across line-search
+trials, and avoiding recomputation of $f$ at points where the gradient was already formed.
+
+Conditioning is again the controlling quantity. A rescaling of variables that reduces
+$\kappa$ from $10^6$ to $10^2$ reduces the iteration count by a factor of $10^4$ for gradient
+descent, and no implementation change is comparable. Diagonal preconditioning is nearly free
+and should be applied before any tuning.
+
+Line searches parallelise poorly — the trials are sequential by construction — while gradient
+evaluations over data parallelise well. For empirical-risk problems this asymmetry is why
+stochastic methods dominate: they replace an exact gradient over $N$ samples by a cheap
+estimate, trading convergence rate for a per-iteration cost reduced by a factor of $N/b$.
+
+## Limitations
+
+Convergence theory for non-convex problems guarantees only stationarity, and stationary
+points include saddles and maxima. Second-order information distinguishes them at
+$\Theta(n^3)$ cost, or randomised perturbation escapes them with high probability at
+negligible cost.
+
+Rates are asymptotic and the constants involve $L$ and $\mu$, which are rarely known. They
+inform method selection — accelerate when $\kappa$ is large, use Newton when $n$ is small and
+$f$ is smooth — rather than iteration budgets.
+
+Finite-difference gradients halve the available precision and cost $n+1$ evaluations, making
+them unsuitable for large $n$; a gradient-based method fed inaccurate gradients stalls at an
+accuracy floor set by the derivative error, not by the tolerance.
+
+Constrained problems require machinery — active sets, interior-point barriers, augmented
+Lagrangians — whose behaviour is dominated by the constraint structure rather than by the
+objective, and none of the unconstrained rates transfer directly.
+
+## Related entries
+
+[Analysis](/docs/mathematics/analysis) for the convergence framework;
+[Linear Algebra](/docs/mathematics/linear-algebra) for the linear solves inside Newton steps;
+[Automatic Differentiation](/docs/scientific-computing/automatic-differentiation) for exact
+derivatives; [Optimization](/docs/scientific-computing/optimization) for the computational
+treatment.
+
+## References
+
+- J. Nocedal and S. J. Wright, *Numerical Optimization*, 2nd ed., Springer, 2006.
+- S. Boyd and L. Vandenberghe, *Convex Optimization*, Cambridge University Press, 2004.
+- Y. Nesterov, *Lectures on Convex Optimization*, 2nd ed., Springer, 2018.
+- A. Nemirovski and D. Yudin, *Problem Complexity and Method Efficiency in Optimization*,
+  Wiley, 1983.

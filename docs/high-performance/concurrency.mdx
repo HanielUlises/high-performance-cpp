@@ -1,0 +1,240 @@
+---
+title: Concurrency
+sidebar_label: Concurrency
+sidebar_position: 8
+description: The C++ memory model, atomic operations and their orderings, and the cost of synchronisation.
+---
+
+# Concurrency
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'std::atomic_ref, atomic waiting and notification, std::latch, std::barrier, std::semaphore, std::jthread and stop tokens.'},
+    {std: 'C++23', note: 'Defect resolutions to the memory model; std::atomic specialisations for floating-point arithmetic operations.'},
+    {std: 'C++26', note: 'Senders and receivers give structured asynchrony; std::hazard_pointer and std::rcu for deferred reclamation.', paper: 'P2300R10, P2530R3'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Data race">
+Two evaluations *conflict* when they access the same memory location and at least one is a
+write. A program has a data race when it contains two conflicting evaluations in different
+threads, neither happening before the other, and at least one is not atomic. A program with a
+data race has undefined behaviour.
+</Definition>
+
+<Definition title="Happens-before">
+The *sequenced-before* relation orders evaluations within a thread. A release operation on an
+atomic object *synchronises with* an acquire operation on the same object that reads the value
+written. *Happens-before* is the transitive closure of sequenced-before and synchronises-with.
+A read sees the last write that happens before it, or any write not ordered with respect to
+it.
+</Definition>
+
+The C++ memory model is not a description of hardware. It is a contract stating which
+reorderings — by the compiler and by the processor — a program may observe, and it is the only
+sound basis for reasoning about concurrent C++.
+
+## Motivation
+
+Parallel decomposition, treated in [Parallelism](/docs/high-performance/parallelism), produces
+tasks that must coordinate: to signal completion, to hand off data, to update shared state. The
+coordination primitives differ in cost by three orders of magnitude, from a relaxed atomic
+increment on an uncontended line to a contended mutex with a kernel-mediated wait, and the
+choice determines whether a decomposition scales.
+
+The second motivation is correctness. Concurrency defects do not reproduce reliably, do not
+appear in a debugger, and are frequently invisible until a compiler upgrade changes the
+generated code. The memory model is the only tool that permits reasoning about them in advance.
+
+## Formal formulation
+
+Six memory orders are available, forming a hierarchy of guarantees.
+
+| Order | Guarantee | Typical use |
+| --- | --- | --- |
+| `relaxed` | Atomicity only; no ordering with other locations | Counters, statistics |
+| `consume` | Ordering along data dependences (in practice promoted to acquire) | Rarely used |
+| `acquire` | No subsequent access moves before this load | Reading a published pointer |
+| `release` | No prior access moves after this store | Publishing initialised data |
+| `acq_rel` | Both, on a read-modify-write | Lock-free stacks and queues |
+| `seq_cst` | A single total order over all such operations | Default; required for Dekker-like patterns |
+
+The release–acquire pair is the workhorse. If thread $A$ writes data then performs a release
+store to a flag, and thread $B$ performs an acquire load of that flag observing $A$'s value,
+then everything $A$ wrote before the store happens before everything $B$ does after the load:
+
+$$
+W_{\text{data}} \xrightarrow{\text{sb}} S_{\text{rel}} \xrightarrow{\text{sw}} L_{\text{acq}} \xrightarrow{\text{sb}} R_{\text{data}}
+\;\Longrightarrow\; W_{\text{data}} \xrightarrow{\text{hb}} R_{\text{data}}.
+$$
+
+Sequential consistency additionally guarantees a single global order, which is required for
+patterns where two threads write different locations and each reads the other's — the store
+buffer pattern — and which costs a full barrier on x86 stores and additional fences on weakly
+ordered architectures.
+
+The cost model for the coherence protocol is what makes contention expensive. A cache line
+holding an atomic variable is in one core's cache in modified state; another core's
+read-modify-write requires an ownership transfer, costing on the order of 100 cycles
+uncontended and growing linearly with the number of contending cores.
+
+## C++ representation
+
+Publication with release–acquire, the standard pattern for handing off initialised data:
+
+```cpp
+#include <atomic>
+#include <cstddef>
+#include <vector>
+
+namespace hpc {
+
+class result_publisher {
+public:
+    // Producer: all writes to data_ happen before the release store.
+    void publish(std::vector<double> data) {
+        data_ = std::move(data);
+        ready_.store(true, std::memory_order_release);
+    }
+
+    // Consumer: if the acquire load observes true, the data is visible.
+    const std::vector<double>* try_get() const noexcept {
+        if (ready_.load(std::memory_order_acquire)) { return &data_; }
+        return nullptr;
+    }
+
+private:
+    std::vector<double> data_;
+    std::atomic<bool> ready_{false};
+};
+
+}  // namespace hpc
+```
+
+Relaxed accumulation, where only atomicity is needed:
+
+```cpp
+#include <atomic>
+#include <cstdint>
+
+namespace hpc {
+
+// No ordering is required between counter updates and any other access,
+// so relaxed is correct and avoids the barrier.
+inline void record_event(std::atomic<std::uint64_t>& counter) noexcept {
+    counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+}  // namespace hpc
+```
+
+`std::atomic_ref` for atomic access to storage that is not itself atomic, which is what allows
+an ordinary array to be updated concurrently in a reduction phase:
+
+```cpp
+#include <atomic>
+#include <span>
+
+namespace hpc {
+
+// Scatter-add into a shared accumulator array. The array is a plain
+// std::span<double>; only the concurrent phase is atomic.
+inline void scatter_add(std::span<double> accumulator,
+                        std::span<const std::size_t> indices,
+                        std::span<const double> values) noexcept
+{
+    for (std::size_t k = 0; k < indices.size(); ++k) {
+        std::atomic_ref<double> slot{accumulator[indices[k]]};
+        slot.fetch_add(values[k], std::memory_order_relaxed);
+    }
+}
+
+}  // namespace hpc
+```
+
+## Implementation
+
+The design rule applied throughout is to eliminate sharing before optimising it. A per-worker
+accumulator combined once, as in [Parallelism](/docs/high-performance/parallelism), has no
+contention at all and outperforms any atomic formulation of the same reduction.
+
+Where sharing is unavoidable, the sequence is: prefer a mutex for anything non-trivial, since
+an uncontended mutex is roughly 20 nanoseconds and correct; move to atomics only where the
+operation is a single word and the contention is measured; and treat lock-free data structures
+as a last resort, since they require reclamation machinery — hazard pointers or RCU — that is
+harder than the structure itself.
+
+Memory orders are stated explicitly at every atomic operation rather than defaulted, so that
+the intended ordering is visible in the source. `seq_cst` is the correct default when the
+reasoning is not clear, and the weaker orders are used only with an argument for why they
+suffice.
+
+The scatter-add above illustrates the standard trade: it is correct, and it serialises when
+indices collide. The alternatives are colouring the index set so that concurrent updates never
+collide, or per-worker accumulation followed by a combining pass; both are algorithmic changes
+and both are preferred where the collision rate is high.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Relaxed atomic increment, uncontended', time: '≈ 20 cycles', space: 'Θ(1)', note: 'Line already owned'},
+    {operation: 'Relaxed atomic increment, p contenders', time: 'Θ(p) × 100 cycles', space: 'Θ(1)', note: 'Line ownership migrates'},
+    {operation: 'seq_cst store, x86', time: '≈ 20–50 cycles', space: 'Θ(1)', note: 'Full barrier'},
+    {operation: 'Uncontended mutex lock/unlock', time: '≈ 20 ns', space: 'Θ(1)', note: 'Atomic exchange, no syscall'},
+    {operation: 'Contended mutex with descheduling', time: '≈ 1–10 μs', space: 'Θ(1)', note: 'Kernel wait'},
+    {operation: 'Barrier, p threads', time: 'Θ(log p), ≈ 1–10 μs', space: 'Θ(p)', note: 'All threads wait for the slowest'},
+    {operation: 'Per-worker accumulate then combine', time: 'Θ(n/p + p)', space: 'Θ(p · line)', note: 'No contention at all'},
+  ]}
+/>
+
+## Performance considerations
+
+Contention, not the atomic instruction, is the cost. An uncontended atomic increment is
+comparable to a normal store; the same increment from sixteen cores is two orders of magnitude
+slower, because the cache line migrates between cores on every operation. Measurements of
+atomic cost taken single-threaded are therefore meaningless for the multi-threaded case.
+
+False sharing produces the same coherence traffic without any logical sharing, and is the
+single most common cause of a parallel loop failing to scale. The diagnostic is a scaling curve
+that goes down rather than flat; the fix is cache-line separation.
+
+Weak memory orders help on architectures that need barriers — Arm, POWER, RISC-V — and help
+less on x86, where loads and stores are already acquire and release respectively. Code tuned
+with relaxed orderings on x86 and never tested on a weakly ordered machine is a common source
+of latent defects.
+
+Blocking synchronisation costs a context switch, of order microseconds. Where the expected
+wait is shorter than that, spinning with `std::atomic::wait` or a bounded spin followed by a
+block is the standard construction, and the bound is measured rather than guessed.
+
+## Limitations
+
+The memory model does not make concurrent programs testable. A race may be latent for years and
+appear after an unrelated change; thread and address sanitisers detect a substantial fraction
+of races and prove nothing about the remainder.
+
+`memory_order_consume` is not implemented as specified by any major compiler and is promoted to
+acquire; code depending on its cheaper semantics does not exist in practice.
+
+Lock-free data structures require safe reclamation, which the language did not supply before
+C++26's hazard pointers and RCU. Implementations that ignore reclamation are incorrect in a way
+that testing rarely reveals.
+
+Progress guarantees are not expressible: the language distinguishes lock-free from wait-free
+in prose only, and `std::atomic::is_lock_free` is a runtime property of a type on a platform.
+
+## Related entries
+
+[Parallelism](/docs/high-performance/parallelism) for decomposition;
+[Memory](/docs/high-performance/memory) for the coherence substrate;
+[Correctness](/docs/formal-cpp/correctness) for the verification of concurrent code.
+
+## References
+
+- H.-J. Boehm and S. Adve, *Foundations of the C++ Concurrency Memory Model*, PLDI 2008.
+- A. Williams, *C++ Concurrency in Action*, 2nd ed., Manning, 2019.
+- P. McKenney, *Is Parallel Programming Hard, And, If So, What Can You Do About It?*, ongoing.
+- M. Batty et al., *Mathematizing C++ Concurrency*, POPL 2011.

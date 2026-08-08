@@ -1,0 +1,256 @@
+---
+title: Type-Level Programming
+sidebar_label: Type-Level Programming
+sidebar_position: 5
+description: Computation in the type language, its expressive power, and the properties it can be made to establish.
+---
+
+# Type-Level Programming
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Class types as non-type template parameters admit structured compile-time values as type arguments.'},
+    {std: 'C++23', note: 'A larger constexpr subset moves most type-level computation into value-level computation.', paper: 'P1938R3'},
+    {std: 'C++26', note: 'Reflection with splicing unifies the type and value languages; type computations become ordinary functions.', paper: 'P2996'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="The type language">
+The template system constitutes a language whose values are types and structural constants,
+whose functions are class templates and alias templates, and whose evaluation is instantiation.
+It is functional, pure, and — through recursive instantiation and partial specialisation —
+Turing-complete, though bounded in practice by implementation limits on instantiation depth.
+</Definition>
+
+## Motivation
+
+Type-level computation is worth its cost when a property must hold *before* the program runs, so
+that its violation is a translation failure rather than a runtime one. Three cases recur in
+numerical software.
+
+Dimensional analysis: physical quantities carry units in their types, and an expression adding a
+length to a time fails to compile. The check has no runtime representation, and the arithmetic is
+identical to the unchecked version.
+
+Shape checking: matrix conformability expressed through extents in the type, so that a
+non-conforming product is a deduction failure rather than a precondition violation.
+
+Layout and dispatch: selecting an implementation from structural properties of a type — its
+storage order, whether its scalar is complex, whether its extents are static — with no runtime
+branch.
+
+Where the property need not be established before execution, value-level `constexpr`
+computation is preferable, for the reasons given in
+[Metaprogramming](/docs/modern-cpp/metaprogramming).
+
+## Formal formulation
+
+A type-level computation is a map $F : \mathcal{T}^k \to \mathcal{T}$, realised as a class or
+alias template. Composition is instantiation nesting, and identity is `std::type_identity`.
+Instantiation is memoised on the exact argument tuple, so evaluation is a call-by-need reduction
+with sharing.
+
+Dimensional analysis is the archetype and has an exact algebraic description. Units form the
+free abelian group on the base dimensions,
+
+$$
+\mathbb{D} = \mathbb{Z}^{d}, \qquad
+\text{[length]} = (1,0,0,\dots), \quad \text{[time]} = (0,1,0,\dots),
+$$
+
+with multiplication of quantities corresponding to addition in $\mathbb{D}$ and division to
+subtraction:
+
+$$
+\dim(x \cdot y) = \dim(x) + \dim(y), \qquad \dim(x/y) = \dim(x) - \dim(y),
+$$
+
+while addition requires equality of dimensions. Encoding $\mathbb{D}$ as a type-level tuple of
+integers turns dimensional correctness into type checking, and the group operations into
+arithmetic on template arguments.
+
+Extents form a similar structure for conformability: the product $A \in F^{m \times k}$,
+$B \in F^{k \times n}$ is defined exactly when the inner extents agree, which is unification of
+type-level integers.
+
+## C++ representation
+
+Dimensional analysis with the exponents as template parameters:
+
+```cpp
+#include <compare>
+#include <type_traits>
+
+namespace hpc {
+
+// A point of the free abelian group on (length, mass, time).
+template <int Length, int Mass, int Time>
+struct dimension {
+    static constexpr int length = Length;
+    static constexpr int mass = Mass;
+    static constexpr int time = Time;
+};
+
+template <class D1, class D2>
+using dimension_product =
+    dimension<D1::length + D2::length, D1::mass + D2::mass, D1::time + D2::time>;
+
+template <class D1, class D2>
+using dimension_quotient =
+    dimension<D1::length - D2::length, D1::mass - D2::mass, D1::time - D2::time>;
+
+template <class Dimension>
+class quantity {
+public:
+    constexpr quantity() = default;
+    constexpr explicit quantity(double v) noexcept : value_{v} {}
+    constexpr double value() const noexcept { return value_; }
+
+    // Addition requires identical dimensions: no conversion exists otherwise.
+    constexpr quantity operator+(quantity q) const noexcept {
+        return quantity{value_ + q.value_};
+    }
+
+    // Multiplication produces a different dimension.
+    template <class D2>
+    constexpr auto operator*(quantity<D2> q) const noexcept
+        -> quantity<dimension_product<Dimension, D2>>
+    {
+        return quantity<dimension_product<Dimension, D2>>{value_ * q.value()};
+    }
+
+    template <class D2>
+    constexpr auto operator/(quantity<D2> q) const noexcept
+        -> quantity<dimension_quotient<Dimension, D2>>
+    {
+        return quantity<dimension_quotient<Dimension, D2>>{value_ / q.value()};
+    }
+
+    constexpr auto operator<=>(const quantity&) const = default;
+
+private:
+    double value_{};
+};
+
+using scalar   = dimension<0, 0, 0>;
+using length   = dimension<1, 0, 0>;
+using time_    = dimension<0, 0, 1>;
+using velocity = dimension_quotient<length, time_>;
+
+static_assert(std::is_same_v<decltype(quantity<length>{1.0} / quantity<time_>{1.0}),
+                             quantity<velocity>>);
+static_assert(sizeof(quantity<length>) == sizeof(double));
+
+}  // namespace hpc
+```
+
+The final assertion is essential: the abstraction is worthwhile only because it has no
+representation. A dimensioned kernel compiles to the same instructions as an undimensioned one.
+
+Static extents, giving conformability by deduction:
+
+```cpp
+#include <array>
+#include <cstddef>
+
+namespace hpc {
+
+template <class T, std::size_t Rows, std::size_t Cols>
+class fixed_matrix;
+
+// Deduction succeeds only when the inner extents agree; a non-conforming
+// product is not a precondition failure but an absence of a candidate.
+template <class T, std::size_t M, std::size_t K, std::size_t N>
+constexpr auto operator*(const fixed_matrix<T, M, K>&, const fixed_matrix<T, K, N>&)
+    -> fixed_matrix<T, M, N>;
+
+}  // namespace hpc
+```
+
+## Implementation
+
+The technique is applied where the property must be established before execution, and not
+otherwise. The costs are real: type-level computation lengthens builds, produces diagnostics
+proportional to instantiation depth, and complicates every signature it touches.
+
+Where it is applied, the discipline is:
+
+Encode the minimum. Only the exponents of the base dimensions live in the type; the value does
+not. Only the extents live in the matrix type; the storage does not.
+
+Assert the erasure. `sizeof` and triviality assertions accompany every wrapper, since an
+abstraction that grows the representation defeats its own purpose in a numerical kernel.
+
+Prefer values where the property need not precede execution. Computing a blocking factor from
+cache sizes is a `constexpr` function returning `std::size_t`, not a template computing a type,
+because nothing needs it to be a type.
+
+Provide named aliases for the composed types. `velocity` above is what users write;
+`dimension_quotient<dimension<1,0,0>, dimension<0,0,1>>` is what the machinery produces, and the
+two must not be confused in an interface.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Alias template instantiation', time: 'Θ(1)', space: 'Θ(1)', note: 'No class generated'},
+    {operation: 'Class template instantiation', time: 'Θ(definition size)', space: 'Θ(definition size)', note: 'Retained per translation unit'},
+    {operation: 'Recursive computation, depth n', time: 'Θ(n) instantiations', space: 'Θ(n)', note: 'Bounded by implementation limits'},
+    {operation: 'Pairwise over two lists of n', time: 'Θ(n²)', space: 'Θ(n²)', note: 'Dominates compiler memory'},
+    {operation: 'Dimensional arithmetic', time: 'Θ(1) per operation', space: 'Θ(1)', note: 'Integer arithmetic on parameters'},
+    {operation: 'Runtime cost of all of the above', time: 'Θ(0)', space: 'Θ(0)', note: 'Erased before code generation'},
+  ]}
+  unit="translation"
+/>
+
+## Performance considerations
+
+Runtime cost is zero by construction, and the assertions above are what make the claim
+checkable rather than aspirational.
+
+Static extents additionally improve the generated code: loop bounds become constants, small
+loops unroll fully, and the vectorizer knows the trip count and can omit the scalar remainder.
+For small fixed-size arithmetic — $3 \times 3$ rotations, $4 \times 4$ transforms — this is
+worth a large factor and is the reason such types are written this way.
+
+The counterweight is instantiation count. A kernel templated on extents instantiates once per
+distinct shape, and a code path exercising many shapes produces a large binary with poor
+instruction-cache behaviour. The rule used here is static extents for small fixed shapes and
+dynamic extents above a threshold of a few tens.
+
+Build time is the other cost, and it is measured rather than estimated: the compilers' time-trace
+facilities attribute build time to individual instantiations, which is the only reliable way to
+find a metaprogram that has become expensive.
+
+## Limitations
+
+Diagnostics are the principal practical objection. A failure inside a type-level computation
+reports an instantiation backtrace, and while concepts truncate the depth at interfaces, the
+interior remains hostile.
+
+Types cannot be introspected before C++26. Type lists are built by hand, cannot be printed, and
+cannot be derived from a struct's members; reflection removes all three restrictions.
+
+Instantiation limits are implementation-defined and low by default, so a recursion depth that
+works on one toolchain may require flags on another.
+
+The type language is a second, weaker language with its own idioms, and the cost of maintaining
+code written in it is higher than that of ordinary code. Every use should be justified by a
+property that must be established before execution.
+
+## Related entries
+
+[Metaprogramming](/docs/modern-cpp/metaprogramming) for the mechanics;
+[Compile-Time Programming](/docs/modern-cpp/compile-time-programming) for the value-level
+alternative; [Types as Abstractions](/docs/formal-cpp/types-as-abstractions) for what a type
+denotes; [Compile-Time Reasoning](/docs/formal-cpp/compile-time-reasoning) for what can be
+established.
+
+## References
+
+- T. Veldhuizen, *C++ Templates are Turing Complete*, 2003.
+- W. Brown, *A Proposal to Add a Units Library*, and the mp-units library documentation.
+- D. Abrahams and A. Gurtovoy, *C++ Template Metaprogramming*, Addison-Wesley, 2004.
+- A. Sutton et al., *Reflection for C++26*, P2996.

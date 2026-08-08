@@ -1,0 +1,118 @@
+---
+title: Conventions
+sidebar_label: Conventions
+sidebar_position: 9
+description: Notation, cost models, code style and measurement practice assumed throughout the reference.
+---
+
+# Conventions
+
+Notation and practice stated once, and assumed by every entry.
+
+## Mathematical notation
+
+Sets of types are written in calligraphic capitals: $\mathcal{T}$ is the set of C++ types,
+$\mathcal{C} \subseteq \mathcal{T}$ a subset picked out by a concept. Mathematical
+structures are written in ordinary capitals, $R$ for a ring, $V$ for a vector space, $F$ for
+a field.
+
+Elements of a structure are lower case, $x, y \in V$; scalars are $\alpha, \beta \in F$;
+matrices are upper case, $A \in F^{m \times n}$, with entries $a_{ij}$. Indices run from $1$
+in mathematics and from $0$ in code; the two are not silently mixed within an entry.
+
+A map is written $f : X \to Y$. A predicate on types is written $C : \mathcal{T} \to
+\{\mathrm{true}, \mathrm{false}\}$, and $C(T)$ abbreviates $C(T) = \mathrm{true}$. Logical
+conjunction and disjunction of predicates are $\land$ and $\lor$; implication is
+$\Rightarrow$; equivalence is $\iff$.
+
+Norms are $\lVert \cdot \rVert$, subscripted when the choice matters: $\lVert x \rVert_2$,
+$\lVert A \rVert_F$. Machine precision — the unit roundoff — is $u$; for IEEE-754 binary64,
+$u = 2^{-53} \approx 1.11 \times 10^{-16}$. A computed quantity is decorated with a hat,
+$\hat{x}$, and $\mathrm{fl}(x)$ denotes the correctly rounded representation of $x$.
+
+## Asymptotic notation
+
+$O$, $\Omega$ and $\Theta$ have their usual meanings, and are used with the cost model named
+explicitly. Three models appear in this reference.
+
+| Model | Counted | Used for |
+| --- | --- | --- |
+| RAM | Elementary operations, unit cost | Combinatorial algorithms |
+| Arithmetic | Floating-point operations only | Numerical kernels |
+| External memory | Cache-line transfers between two levels | Locality analysis |
+
+The external-memory model is the pair $(M, B)$: a cache of $M$ words, transfers of $B$ words
+per line. A statement such as $\Theta(n^3 / (B\sqrt{M}))$ is a transfer count, not an
+operation count, and is meaningless without the model being named.
+
+Where an entry gives both, the two are reported separately and their ratio — the arithmetic
+intensity, in operations per byte moved — is given, since it determines which of the two
+bounds the computation.
+
+## Code
+
+Examples target C++20 unless the entry states otherwise, and any dependence on a later
+revision is recorded in the revision block at the head of the entry. Code is written to
+compile as shown; includes are given when the example is meant to be compiled rather than
+read in isolation.
+
+```cpp
+#include <concepts>
+
+namespace hpc {
+
+template <class T>
+concept Additive = requires(T x, T y) {
+    { x + y } -> std::same_as<T>;
+};
+
+}  // namespace hpc
+```
+
+Component names occupy `namespace hpc`. Concepts are named for the structure they denote —
+`Ring`, `VectorSpace`, `RandomAccessRange` — and are capitalised. Type parameters are named
+for their role, `T` for an arbitrary type, `F` for a field, `A` for a matrix type, and are
+not abbreviated past recognition. Variables carry the names their mathematics gives them.
+
+Comments state what the code cannot. A comment that restates the expression it precedes is
+removed rather than improved.
+
+## Semantic requirements
+
+C++ checks the syntactic part of a concept and none of the semantic part. Where an entry
+requires laws — associativity, commutativity, the existence of an identity, a strict weak
+ordering — those laws are stated explicitly as requirements, and their violation is
+described as undefined behaviour of the component, not of the language.
+
+The notation used throughout is a numbered requirement block: a syntactic part expressible
+in a `requires`-expression, followed by the algebraic laws that the type must satisfy and
+the compiler cannot verify. See [Semantic Requirements](/docs/formal-cpp/semantic-requirements)
+for the treatment.
+
+## Measurement
+
+Performance claims are accompanied by the machine, the compiler and version, the exact
+flags, the input sizes, and the timing method. A claim without them is not made.
+
+| Item | Reported as |
+| --- | --- |
+| CPU | Model, base and sustained clock, core count, vector ISA |
+| Memory | Capacity, channels, measured bandwidth from a stream benchmark |
+| Cache | Sizes and line size for each level, per core or shared |
+| Compiler | Vendor, exact version, full command line |
+| Timing | Clock source, repetitions, warm-up, statistic reported |
+
+The statistic reported is the minimum over repetitions for kernels intended to be
+compute-bound, since the minimum is the closest available estimate of the interference-free
+cost, and the median with an interquartile range for anything involving allocation, I/O or
+contention. Which is used is stated in the table.
+
+Frequency scaling is disabled or, where it cannot be, reported. Timings that could not be
+reproduced within a stated tolerance across runs are marked as such rather than averaged
+into significance.
+
+## Cross-references
+
+An entry links to the entries it depends on rather than restating them. Where a definition
+is repeated for readability, the canonical statement is the one linked, and any discrepancy
+is a defect in the repeating entry.

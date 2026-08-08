@@ -1,0 +1,223 @@
+---
+title: Types as Abstractions
+sidebar_label: Types as Abstractions
+sidebar_position: 1
+description: The type as a value space with operations, the regularity requirements, and the gap between a type and the structure it represents.
+---
+
+# Types as Abstractions
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'std::regular and std::semiregular name the value-semantics requirements; three-way comparison generates the ordering operations.'},
+    {std: 'C++23', note: 'Deducing this removes the const/non-const duplication that obscured the value interface of a type.', paper: 'P0847R7'},
+    {std: 'C++26', note: 'Reflection allows a type\'s operations to be enumerated, making regularity checkable rather than asserted.', paper: 'P2996'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Type as an abstraction">
+A type $T$ denotes a pair $(V_T, O_T)$: a set of values $V_T$, and a set of operations
+$O_T$ on that set. The *representation* — the object layout, the bytes in storage — is a means
+of realising the pair and is not part of the abstraction. Two objects of type $T$ hold the same
+value when no operation in $O_T$ distinguishes them.
+</Definition>
+
+The definition separates two things that C++ conflates in its syntax. `int` denotes a finite
+subset of $\mathbb{Z}$ with wrapping or undefined overflow, not the integers; `double` denotes a
+finite subset of $\mathbb{R} \cup \{\pm\infty, \mathrm{NaN}\}$ with rounded operations, not the
+reals. Every claim about a program is a claim about the value space actually implemented.
+
+## Motivation
+
+Generic code is written against value spaces and their operations, not against representations,
+and the failures of generic code are almost always failures of that abstraction rather than of
+the syntax.
+
+A concrete instance: `std::sort` requires that its comparison be a strict weak ordering.
+Comparing floating-point values containing NaN violates it — NaN is unordered with everything,
+so the induced equivalence is not transitive — and the consequence is not a wrong ordering but
+undefined behaviour, including out-of-range writes in common implementations. The type `double`
+does not model a totally ordered set, and the algorithm's requirement is on the abstraction, not
+on the syntax.
+
+## Formal formulation
+
+<Definition title="Regularity">
+A type $T$ is *regular* when it provides default construction, copy construction, copy
+assignment, destruction, and equality, and these satisfy:
+$$
+\begin{aligned}
+&b \leftarrow a \;\Rightarrow\; b = a, \\
+&a = b \;\Rightarrow\; f(a) = f(b) \quad \text{for every } f \in O_T, \\
+&a = a, \quad a = b \Rightarrow b = a, \quad a = b \land b = c \Rightarrow a = c.
+\end{aligned}
+$$
+The second condition is *substitutability*: equal values are indistinguishable under the
+operations of the type.
+</Definition>
+
+Regularity is what algorithms assume. An algorithm that copies a value and operates on the copy
+is correct only if the copy behaves as the original; one that caches a comparison result is
+correct only if equality is an equivalence.
+
+Two failure modes recur. A type whose `operator==` compares identity rather than value violates
+substitutability with respect to construction. A type with mutable state observable through its
+operations — a cached computation exposed through a getter — violates it with respect to that
+getter.
+
+The relation between a mathematical structure and its C++ representation is a *homomorphism*
+that is generally partial and approximate. For $\phi : V_T \to S$ mapping representable values
+into a structure $S$, exactness would require
+
+$$
+\phi(a \oplus_T b) = \phi(a) \oplus_S \phi(b),
+$$
+
+which fails for `double` under addition by the rounding error, and for `int` under addition
+outside the representable range. The correct statement is a bound:
+
+$$
+\phi(a \oplus_T b) = \big(\phi(a) \oplus_S \phi(b)\big)(1 + \delta), \quad |\delta| \le u,
+$$
+
+which is the standard model of [Numerical Analysis](/docs/mathematics/numerical-analysis) read
+as a statement about abstraction.
+
+## C++ representation
+
+A regular type stating its value semantics explicitly:
+
+```cpp
+#include <compare>
+#include <concepts>
+#include <cstddef>
+
+namespace hpc {
+
+// A dimensioned quantity: the value space is ℝ, and the dimension is a
+// type-level tag with no runtime representation.
+template <class Dimension>
+class quantity {
+public:
+    constexpr quantity() = default;
+    constexpr explicit quantity(double v) noexcept : value_{v} {}
+
+    constexpr double value() const noexcept { return value_; }
+
+    constexpr quantity operator+(quantity q) const noexcept {
+        return quantity{value_ + q.value_};
+    }
+
+    constexpr quantity operator-(quantity q) const noexcept {
+        return quantity{value_ - q.value_};
+    }
+
+    // Equality is on values, and the comparison is partial because the
+    // underlying value space contains NaN.
+    constexpr bool operator==(const quantity&) const = default;
+    constexpr std::partial_ordering operator<=>(const quantity&) const = default;
+
+private:
+    double value_{};
+};
+
+static_assert(std::regular<quantity<struct length_tag>>);
+static_assert(sizeof(quantity<struct length_tag>) == sizeof(double));
+
+}  // namespace hpc
+```
+
+Two properties are asserted rather than assumed: that the type is regular, and that the
+abstraction costs nothing in representation. The second assertion is what makes the abstraction
+usable in a numerical kernel.
+
+The partial ordering is deliberate: `double` is not totally ordered, and a type wrapping it
+that claims `std::strong_ordering` is lying to every algorithm that consults the trait.
+
+## Implementation
+
+Three rules follow from the definition.
+
+The invariant is stated and established in the constructor. A type whose values are a proper
+subset of its representable states — a normalised rational, a unit vector, a sorted range —
+must establish the subset on construction and preserve it in every operation, or the value space
+is not what the type claims.
+
+Equality means value equality, or the operation is not provided. A type for which equality is
+not meaningful — a handle to a resource, a callback — declines to define `operator==` rather
+than defining it as identity comparison. Algorithms then reject it, which is correct.
+
+Operations preserving the abstraction are members or hidden friends; operations exposing the
+representation are named to say so. A `data()` accessor is a deliberate escape from the
+abstraction and is named as such.
+
+The type-level tag in `quantity` above is the standard technique for a distinction that exists
+in the abstraction but has no representation: lengths and times are different value spaces with
+identical layouts, and mixing them is a type error at zero runtime cost.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Copy of a trivially copyable type', time: 'Θ(sizeof)', space: 'Θ(sizeof)', note: 'memcpy; vectorized in bulk'},
+    {operation: 'Copy of a type with heap state', time: 'Θ(elements) + allocation', space: 'Θ(elements)', note: 'Allocation dominates for small n'},
+    {operation: 'Equality on a normalised representation', time: 'Θ(sizeof)', space: 'Θ(1)', note: 'Invariant makes it a bit comparison'},
+    {operation: 'Equality requiring normalisation', time: 'Θ(cost of normalisation)', space: 'Θ(1)', note: 'Invariant not established on construction'},
+    {operation: 'Zero-overhead wrapper access', time: 'Θ(1), no instructions', space: 'Θ(0)', note: 'Verified by the sizeof assertion'},
+  ]}
+/>
+
+## Performance considerations
+
+An abstraction that changes the representation changes the performance. A wrapper over `double`
+that is trivially copyable and standard-layout costs nothing; the same wrapper with a
+user-provided copy constructor is no longer trivially copyable, and an array of them can no
+longer be relocated with `memcpy`.
+
+`static_assert(sizeof(W) == sizeof(T))` and
+`static_assert(std::is_trivially_copyable_v<W>)` are therefore part of the interface of a
+wrapper type, not part of its tests: they state the properties the surrounding code depends on
+and fail the build when they stop holding.
+
+Value semantics interact with move operations as described in
+[Language](/docs/modern-cpp/language): a move constructor that is not `noexcept` converts vector
+growth from moves into copies. For a type whose abstraction includes ownership of a buffer, this
+is the difference between $\Theta(n)$ pointer updates and $\Theta(n)$ allocations.
+
+Types whose values are large should be passed by reference and returned by value, relying on
+guaranteed elision; types whose values fit in registers should be passed by value. The threshold
+is two machine words on the common calling conventions, and it is a property of the
+representation rather than of the abstraction.
+
+## Limitations
+
+C++ cannot state a type's invariant, so a value space narrower than the representable states is
+maintained by discipline. A `quantity` holding NaN is representable and outside the intended
+value space, and nothing prevents it.
+
+Equality cannot be required to be an equivalence, nor comparison to be a strict weak ordering.
+The standard states these as requirements in prose and the compiler checks neither.
+
+The homomorphism from a mathematical structure to a type is approximate for every floating-point
+type, so a `Field` concept satisfied by `double` licenses reasoning that is valid only up to the
+error bounds. The reasoning is still worth doing; the bounds must accompany it.
+
+Representation is observable through `sizeof`, `memcpy`, `bit_cast` and the object model, so an
+abstraction can always be circumvented. The type system expresses intent, not enforcement.
+
+## Related entries
+
+[Concepts as Predicates](/docs/formal-cpp/concepts-as-predicates) for the sets of types;
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements) for the laws;
+[Language](/docs/modern-cpp/language) for the object model;
+[Algebra](/docs/mathematics/algebra) for the structures being represented.
+
+## References
+
+- A. Stepanov and P. McJones, *Elements of Programming*, Addison-Wesley, 2009, chapter 1.
+- J. Reynolds, *Types, Abstraction and Parametric Polymorphism*, IFIP 1983.
+- B. Liskov and J. Guttag, *Abstraction and Specification in Program Development*, MIT Press,
+  1986.
+- J. C. Mitchell, *Foundations for Programming Languages*, MIT Press, 1996.

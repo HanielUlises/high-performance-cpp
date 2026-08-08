@@ -1,0 +1,273 @@
+---
+title: Matrix Multiplication
+sidebar_label: Matrix Multiplication
+sidebar_position: 2
+description: A complete derivation of the dense product, from the composition of linear maps to a compute-bound blocked kernel.
+---
+
+# Matrix Multiplication
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts constrain the scalar type; over-aligned allocation supports vector loads on packed panels.'},
+    {std: 'C++23', note: 'std::mdspan with layout policies expresses row-major, column-major and tiled storage in one kernel.', paper: 'P0009R18'},
+    {std: 'C++26', note: 'std::linalg::matrix_product dispatches to a vendor kernel; std::simd expresses the micro-kernel portably.', paper: 'P1673R13, P1928R15'},
+  ]}
+/>
+
+## Abstraction
+
+<Definition title="Composition of linear maps">
+For linear maps $S : F^k \to F^m$ and $T : F^n \to F^k$, the composition $S \circ T$ is linear,
+and in fixed bases its matrix is the product
+$$
+(AB)_{ij} = \sum_{p=1}^{k} a_{ip} b_{pj}, \qquad A \in F^{m\times k},\; B \in F^{k \times n}.
+$$
+The product is associative and distributive over addition, and is not commutative.
+</Definition>
+
+Conformability — that the inner extents agree — is a hypothesis of the definition, and in the
+implementation it becomes either a deduction constraint or a precondition, depending on whether
+the extents are static.
+
+## Specification
+
+The computation is $C \mathrel{+}= AB$, accumulating into an existing $C$ rather than producing a
+new one, because the accumulating form is the one that composes into blocked algorithms.
+
+The correctness argument requires a ring: multiplication, addition, an additive identity, and
+distributivity. Associativity of addition is required to license any summation order, and it is
+required, because every efficient implementation reorders the $p$ loop.
+
+## Type and concept
+
+```cpp
+#include <concepts>
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+template <class T>
+concept Ring = requires(T x, T y) {
+    { x + y } -> std::same_as<T>;
+    { x * y } -> std::same_as<T>;
+    { T{} }   -> std::same_as<T>;
+};
+
+// Semantic requirements (unchecked):
+//   S1. + is associative and commutative.
+//   S2. * distributes over +.
+//   S3. T{} is the additive identity.
+
+template <class M>
+concept Matrix = requires(const M& m, std::size_t i, std::size_t j) {
+    typename M::value_type;
+    { M::rank() }    -> std::convertible_to<std::size_t>;
+    { m.extent(0) }  -> std::convertible_to<std::size_t>;
+    { m.extent(1) }  -> std::convertible_to<std::size_t>;
+    { m[i, j] }      -> std::convertible_to<typename M::value_type>;
+};
+
+}  // namespace hpc
+```
+
+## Implementation
+
+The definition, transcribed:
+
+```cpp
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// C += A B, transcribed from the definition. Correct, and bandwidth-bound:
+// the inner loop strides through B by its leading dimension.
+inline void gemm_naive(
+    std::mdspan<const double, std::dextents<std::size_t, 2>> A,
+    std::mdspan<const double, std::dextents<std::size_t, 2>> B,
+    std::mdspan<double, std::dextents<std::size_t, 2>> C) noexcept
+{
+    for (std::size_t i = 0; i < C.extent(0); ++i) {
+        for (std::size_t j = 0; j < C.extent(1); ++j) {
+            double acc = 0.0;
+            for (std::size_t p = 0; p < A.extent(1); ++p) {
+                acc += A[i, p] * B[p, j];
+            }
+            C[i, j] += acc;
+        }
+    }
+}
+
+}  // namespace hpc
+```
+
+Interchanging the two inner loops fixes the stride, and is legal only because addition is being
+reassociated — obligation S1 above:
+
+```cpp
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// C += A B with the j loop innermost: B and C are both traversed
+// contiguously, and A[i, p] is loop-invariant in a register.
+inline void gemm_interchanged(
+    std::mdspan<const double, std::dextents<std::size_t, 2>> A,
+    std::mdspan<const double, std::dextents<std::size_t, 2>> B,
+    std::mdspan<double, std::dextents<std::size_t, 2>> C) noexcept
+{
+    for (std::size_t i = 0; i < C.extent(0); ++i) {
+        for (std::size_t p = 0; p < A.extent(1); ++p) {
+            const double a = A[i, p];
+            for (std::size_t j = 0; j < C.extent(1); ++j) {
+                C[i, j] += a * B[p, j];
+            }
+        }
+    }
+}
+
+}  // namespace hpc
+```
+
+Blocking, which is what raises the arithmetic intensity:
+
+```cpp
+#include <algorithm>
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// Three-level blocking: NC and KC size the L3- and L2-resident panels,
+// MC the L1-resident block. Chosen so that 3·MC·KC·8 bytes ≤ L2 capacity.
+template <std::size_t MC = 96, std::size_t NC = 256, std::size_t KC = 256>
+void gemm_blocked(
+    std::mdspan<const double, std::dextents<std::size_t, 2>> A,
+    std::mdspan<const double, std::dextents<std::size_t, 2>> B,
+    std::mdspan<double, std::dextents<std::size_t, 2>> C) noexcept
+{
+    const std::size_t M = C.extent(0);
+    const std::size_t N = C.extent(1);
+    const std::size_t K = A.extent(1);
+
+    for (std::size_t jc = 0; jc < N; jc += NC) {
+        const std::size_t jn = std::min(NC, N - jc);
+        for (std::size_t pc = 0; pc < K; pc += KC) {
+            const std::size_t pk = std::min(KC, K - pc);
+            for (std::size_t ic = 0; ic < M; ic += MC) {
+                const std::size_t im = std::min(MC, M - ic);
+
+                for (std::size_t i = 0; i < im; ++i) {
+                    for (std::size_t p = 0; p < pk; ++p) {
+                        const double a = A[ic + i, pc + p];
+                        for (std::size_t j = 0; j < jn; ++j) {
+                            C[ic + i, jc + j] += a * B[pc + p, jc + j];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+}  // namespace hpc
+```
+
+A production kernel additionally *packs* the $A$ and $B$ blocks into contiguous buffers in the
+order the micro-kernel consumes them, so that the innermost loop sees unit stride regardless of
+the original layout, and the micro-kernel keeps a $M_r \times N_r$ tile of $C$ in vector
+registers. Both are mechanical once the blocking above is correct, and both are worth a further
+factor of two to three.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Operations, all variants', time: '2mnk flops', space: 'Θ(1)', note: 'Identical; only traffic differs'},
+    {operation: 'gemm_naive, n × n, n² ≫ M', time: '2n³ flops', space: 'Θ(1)', note: 'Θ(n³) transfers; I = O(1)'},
+    {operation: 'gemm_interchanged', time: '2n³ flops', space: 'Θ(1)', note: 'Θ(n³/B) transfers; vectorizes'},
+    {operation: 'gemm_blocked, tile b', time: '2n³ flops', space: 'Θ(b²) packed', note: 'Θ(n³/(B√M)) transfers; I = Θ(b)'},
+    {operation: 'Strassen', time: 'Θ(n^{2.807})', space: 'Θ(n²)', note: 'Weaker stability; crossover n ≈ 10³'},
+  ]}
+  unit="m = n = k, external-memory model"
+/>
+
+The Hong–Kung lower bound $\Omega(n^3/(B\sqrt{M}))$ is attained by the blocked form, so no
+further reduction in traffic is possible for the classical algorithm.
+
+Arithmetic intensity as a function of the blocking factor:
+
+$$
+I(b) = \frac{2b^3}{3 \cdot 8 b^2} = \frac{b}{12} \text{ flop/byte},
+$$
+
+so $b = 96$ gives $I = 8$, above the ridge point of most machines: **blocking converts a
+memory-bound kernel into a compute-bound one**, which is the entire point of the exercise.
+
+## Hardware mapping
+
+The block sizes follow from the capacity constraint $3b^2 \cdot 8 \le M$: for a 1 MB L2,
+$b \le 209$, reduced in practice to leave room for the packed panels and the output tile.
+
+The micro-kernel tile is chosen from the register file: with 32 vector registers of 8 doubles,
+an $8 \times 6$ tile of $C$ occupies 6 registers holding 48 values, leaving room for the $A$
+broadcast and $B$ loads. This is the level at which the kernel is written in intrinsics or
+`std::simd`, and it is the only level that needs to be.
+
+Padding the leading dimension away from a power of two removes the cache-set conflicts described
+in [Cache Locality](/docs/high-performance/cache-locality); their signature is a sharp drop in
+performance at $n = 512, 1024, 2048$ with normal behaviour at $n \pm 8$.
+
+Parallelisation is over the $jc$ loop, giving each worker a column panel of $C$ and a shared
+read-only $A$. The decomposition has no write conflicts, and the working set per worker is its
+own panel plus the shared packed $A$.
+
+## Measurement
+
+| Quantity | How obtained |
+| --- | --- |
+| Achieved flop rate | $2n^3/t$, compared against the machine's peak |
+| Fraction of peak | The single most informative number for this kernel |
+| Traffic | Hardware counters for last-level-cache misses, compared against $n^3/(B\sqrt{M})$ |
+| Crossover | The $n$ at which blocked overtakes interchanged |
+| Conflict signature | Sweep $n$ in steps of 8 across 512 and 1024 |
+
+Sizes are swept from $n = 64$ to the largest that fits memory, with square and rectangular
+shapes, since a kernel tuned for square matrices frequently degrades on tall-and-skinny ones —
+which is the shape that appears inside blocked factorizations.
+
+## Limitations
+
+The blocking parameters are machine-specific and do not transfer between microarchitectures;
+they are constants in the source and must be re-tuned, which is the motivation for autotuning
+frameworks and for the cache-oblivious alternative.
+
+The reassociation of the summation makes the result depend on the blocking, so a change of block
+size changes the last bits of the answer. The error bound is norm-wise stable in all variants:
+$\lvert \hat{C} - C \rvert \le \gamma_k \lvert A \rvert \lvert B \rvert$ componentwise.
+
+Strassen's algorithm reduces the exponent and loses the componentwise bound, replacing it with a
+norm-wise one; it is not used here without stating the change.
+
+`Ring<T>` admits types for which the loop-invariant hoisting of `A[i, p]` is unprofitable, and
+admits non-commutative multiplication, which the implementation respects — but the reassociation
+of *addition* is assumed and unchecked.
+
+## Related entries
+
+[Cache Locality](/docs/high-performance/cache-locality) for the transfer analysis;
+[Linear Algebra](/docs/mathematics/linear-algebra) for the mathematics;
+[Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra) for the
+factorizations built on this kernel; [Benchmarks](/docs/benchmarks) for the measurement harness.
+
+## References
+
+- K. Goto and R. van de Geijn, *Anatomy of High-Performance Matrix Multiplication*, ACM TOMS
+  34(3), 2008.
+- F. Van Zee and R. van de Geijn, *BLIS*, ACM TOMS 41(3), 2015.
+- J.-W. Hong and H. T. Kung, *I/O Complexity: The Red-Blue Pebble Game*, STOC 1981.
+- N. J. Higham, *Exploiting Fast Matrix Multiplication Within the Level 3 BLAS*, ACM TOMS 16(4),
+  1990.

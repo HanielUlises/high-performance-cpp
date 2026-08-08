@@ -1,0 +1,249 @@
+---
+title: Language
+sidebar_label: Language
+sidebar_position: 1
+description: The core object model, value categories, lifetime and initialisation rules that generic and performance-oriented code depends on.
+---
+
+# Language
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Aggregate initialisation with designators, constinit, immediate destruction of temporaries clarified, [[likely]] and [[unlikely]].'},
+    {std: 'C++23', note: 'Deducing this generalises member-function parameterisation over the object argument.', paper: 'P0847R7'},
+    {std: 'C++26', note: 'Contracts add checkable preconditions and postconditions to the function interface.', paper: 'P2900'},
+  ]}
+/>
+
+## Definition
+
+The core language defines a model of *objects* — regions of storage with a type, a lifetime,
+and a value — together with the rules by which expressions produce, name, transfer and
+destroy them. Every abstraction developed later in this reference is a discipline imposed on
+top of that model, and every performance argument is ultimately a claim about the storage it
+allocates and the traffic it generates.
+
+<Definition title="Object">
+An object is a region of storage with an associated type, a lifetime beginning when its
+initialisation completes and ending when its destructor call begins or its storage is
+reused, and a value drawn from the value space of its type. Objects are created by
+definitions, `new`-expressions, throw-expressions, changing the active member of a union,
+and by implicit-lifetime rules for suitable types.
+</Definition>
+
+## Motivation
+
+Generic code cannot assume the representation of its arguments; it can only assume their
+behaviour. The language supplies the vocabulary in which that behaviour is described:
+whether a type can be copied, whether it can be moved from and what state it is left in,
+whether its objects can be relocated in memory without observation, whether two objects can
+be compared and how.
+
+Performance-oriented code has the opposite dependence: it assumes representation. A
+contiguous array of `double` is not merely a sequence, it is a block of $8n$ bytes with
+known alignment, addressable by a vector load. The language rules on layout, aliasing and
+lifetime say when that assumption is legitimate.
+
+Both dependencies are on the same set of rules, which is why they are stated first.
+
+## Formal formulation
+
+An expression is characterised by a type and a *value category*. The taxonomy is generated
+by two properties: whether the expression has identity ($i$), and whether it may be moved
+from ($m$).
+
+$$
+\begin{aligned}
+\text{lvalue} &: i \land \lnot m \\
+\text{xvalue} &: i \land m \\
+\text{prvalue} &: \lnot i \land m
+\end{aligned}
+$$
+
+The unions are named: a *glvalue* is $i$, and an *rvalue* is $m$. A prvalue does not denote
+an object; it is a computation that initialises one when required. This is the formal
+content of guaranteed copy elision in C++17 and later: for a prvalue $e$ used to initialise
+an object $o$ of the same type, no temporary intervenes, so no copy or move constructor need
+exist.
+
+Lifetime is a half-open interval. For an object $o$,
+
+$$
+\mathrm{life}(o) = [\,t_{\mathrm{init}}(o),\; t_{\mathrm{destroy}}(o)\,),
+$$
+
+and any access to $o$ outside that interval is undefined. Automatic objects nest: if $o_1$
+is declared before $o_2$ in the same block, then $\mathrm{life}(o_2) \subseteq
+\mathrm{life}(o_1)$ up to the destruction order, which is the reverse of construction. The
+nesting is what makes scope-based resource management sound.
+
+## C++ representation
+
+The regular-type discipline used throughout this reference is the following set of
+requirements, most of which the standard library names.
+
+```cpp
+#include <concepts>
+
+namespace hpc {
+
+// Copyable, comparable, default-constructible: the value semantics assumed by
+// containers, algorithms and every numeric abstraction in this reference.
+template <class T>
+concept Regular = std::regular<T>;
+
+// Regular, and additionally totally ordered by <.
+template <class T>
+concept TotallyOrderedRegular = std::regular<T> && std::totally_ordered<T>;
+
+}  // namespace hpc
+```
+
+A type is *regular* when its copies are indistinguishable from their sources under the
+operations of the type, and equality means what the algorithms take it to mean:
+
+$$
+b = a \;\Rightarrow\; b = a \;\land\; f(b) = f(a)
+$$
+
+for every function $f$ definable in terms of the type's public operations. Types failing
+this — types whose copies are observably distinct, or whose `operator==` compares
+identities rather than values — are not usable with the standard algorithms, whatever
+compiles.
+
+## Implementation
+
+Two consequences of the object model dominate the implementation of numerical components.
+
+The first is initialisation. Value initialisation of a large array zeroes it; default
+initialisation of trivially default-constructible elements does not. For a working buffer
+that is about to be overwritten, the difference is a full pass over the memory.
+
+```cpp
+#include <cstddef>
+#include <new>
+#include <type_traits>
+#include <utility>
+
+namespace hpc {
+
+// Uninitialised storage for `n` elements, correctly aligned, with no zeroing
+// pass. The caller is responsible for constructing elements before use.
+template <class T>
+class buffer {
+public:
+    explicit buffer(std::size_t n)
+        : n_{n}, data_{static_cast<T*>(::operator new[](n * sizeof(T), std::align_val_t{64}))} {}
+
+    ~buffer() { ::operator delete[](data_, std::align_val_t{64}); }
+
+    buffer(buffer&& other) noexcept
+        : n_{other.n_}, data_{std::exchange(other.data_, nullptr)} {
+        other.n_ = 0;
+    }
+
+    buffer& operator=(buffer&& other) noexcept {
+        buffer tmp{std::move(other)};
+        swap(tmp);
+        return *this;
+    }
+
+    buffer(const buffer&) = delete;
+    buffer& operator=(const buffer&) = delete;
+
+    void swap(buffer& other) noexcept {
+        std::swap(n_, other.n_);
+        std::swap(data_, other.data_);
+    }
+
+    T* data() noexcept { return data_; }
+    const T* data() const noexcept { return data_; }
+    std::size_t size() const noexcept { return n_; }
+
+private:
+    std::size_t n_;
+    T* data_;
+};
+
+}  // namespace hpc
+```
+
+The example is deliberately not a container: it owns storage, not objects, and the
+distinction between the two is the point of the object model.
+
+The second consequence is the noexcept status of move operations. `std::vector` reallocation
+uses `std::move_if_noexcept`, so a type whose move constructor is not `noexcept` is *copied*
+on every growth of a vector holding it. For an element type owning a heap buffer, this
+converts an $O(n)$ pointer shuffle into $O(n)$ allocations and a full data copy.
+
+```cpp
+static_assert(std::is_nothrow_move_constructible_v<hpc::buffer<double>>);
+```
+
+Assertions of this kind belong next to the type, not in a test file; they document a
+performance-relevant property of the interface.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Value-initialise n trivially constructible elements', time: 'Θ(n)', space: '—', note: 'One full write pass; often avoidable'},
+    {operation: 'Default-initialise n trivially constructible elements', time: 'Θ(1)', space: '—', note: 'No writes; values indeterminate'},
+    {operation: 'vector growth, nothrow-movable element', time: 'Θ(n) amortised Θ(1)', space: 'Θ(n)', note: 'Moves only'},
+    {operation: 'vector growth, potentially-throwing move', time: 'Θ(n) copies', space: 'Θ(n)', note: 'Element allocations repeated'},
+  ]}
+  unit="n elements, RAM model"
+/>
+
+## Performance considerations
+
+Alignment is part of the type, and part of the cost model. A vector load from an address
+aligned to the vector width is a single transaction; an unaligned load crossing a cache line
+is two. Over-aligned allocation, as above, removes the question from the inner loop.
+
+Aliasing determines whether a loop can be vectorized at all. Two pointers of the same type
+may alias, and the compiler must assume they do unless it can prove otherwise. Passing
+distinct spans and asserting their disjointness — by construction, by `__restrict` where it
+is available, or by taking the values into locals before the loop — is what allows the
+scheduler to reorder loads and stores.
+
+Trivial copyability determines whether a copy is a `memcpy`. A type that is trivially
+copyable can be relocated by moving its bytes; a type that is not requires a
+construct-and-destroy pass per element. For a matrix element type this is the difference
+between a bandwidth-bound copy and a call-bound one.
+
+`[[likely]]` and `[[unlikely]]` inform block placement, and are worth applying only where
+the branch is genuinely lopsided and measurement has shown the layout to matter; misapplied,
+they degrade the fallthrough path that dominates.
+
+## Limitations
+
+The object model gives no way to state that a type is *trivially relocatable* — that a move
+followed by a destruction of the source is equivalent to a byte copy. Almost all types are,
+including every standard container implementation in wide use, and the absence of the
+property in the language forces containers to move-and-destroy element by element.
+
+Lifetime is not tracked by the type system. A dangling reference is well-formed and
+undefined, and generic code that returns references into its arguments — as the ranges
+library does routinely — must document the dependency, since the compiler cannot.
+
+Initialisation remains irregular: parentheses, braces and equals do not mean the same
+thing, and the differences bite hardest exactly where generic code needs uniformity, in
+forwarding wrappers and factory functions.
+
+## Related entries
+
+[Templates](/docs/modern-cpp/templates) develops the parameterisation built on this model.
+[Types as Abstractions](/docs/formal-cpp/types-as-abstractions) treats the type as a
+mathematical object rather than a layout. [Data Layout](/docs/high-performance/data-layout)
+takes up the representation side, and [Memory](/docs/high-performance/memory) the cost of
+the storage the model describes.
+
+## References
+
+- ISO/IEC 14882, *Programming languages — C++*, clauses on the object model, value
+  categories, and initialisation.
+- B. Stroustrup, *The Design and Evolution of C++*, Addison-Wesley, 1994, on the origin of
+  the value-semantics discipline.
+- A. Stepanov and P. McJones, *Elements of Programming*, Addison-Wesley, 2009, chapters 1–2,
+  for the regular-type requirements used here.

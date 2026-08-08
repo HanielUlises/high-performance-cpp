@@ -1,0 +1,42 @@
+---
+title: Examples
+sidebar_label: Overview
+sidebar_position: 0
+description: Complete derivations, each carried from a mathematical statement to an implementation whose cost is accounted for.
+---
+
+# Examples
+
+Each example carries one problem the whole way along the derivation used throughout this
+reference. Nothing is elided: the structure is stated, the concept is written, the algorithm is
+written against the concept, the cost is computed, the hardware mapping is made, and the
+measurement protocol is given.
+
+<Chain
+  stages={[
+    {label: 'Abstraction', detail: 'The mathematical object and its structure.'},
+    {label: 'Specification', detail: 'Operations, laws, admissible domain.'},
+    {label: 'Type / concept', detail: 'The C++ encoding of the specification.'},
+    {label: 'Implementation', detail: 'Generic algorithm against the concept.'},
+    {label: 'Complexity', detail: 'Operations and traffic under a stated model.'},
+    {label: 'Hardware mapping', detail: 'Layout, locality, vector width, decomposition.'},
+    {label: 'Measurement', detail: 'What is to be measured and how.'},
+  ]}
+/>
+
+## Examples
+
+| Example | Problem | Principal lesson |
+| --- | --- | --- |
+| [Inner Product](/docs/examples/inner-product) | $\langle x, y\rangle$ over a field | A bandwidth-bound kernel; associativity and accumulator count |
+| [Matrix Multiplication](/docs/examples/matrix-multiplication) | $C \mathrel{+}= AB$ | Raising arithmetic intensity by blocking |
+| [Conjugate Gradient](/docs/examples/conjugate-gradient) | $Ax = b$, $A$ symmetric positive definite | An algorithm written against an operator, not a matrix |
+
+## Reading them
+
+The examples are written to be read in order, since each uses the previous: the inner product is
+a kernel of conjugate gradient, and the blocking analysis of matrix multiplication is the model
+for every dense kernel.
+
+The code in each is complete and compiles as shown against C++20 unless the entry says otherwise.
+Where a later revision offers a better formulation, both are given.

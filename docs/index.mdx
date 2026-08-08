@@ -1,0 +1,118 @@
+---
+title: The Reference
+sidebar_label: The Reference
+sidebar_position: 0
+slug: /
+description: Scope, organisation and reading order of a technical reference on modern C++, mathematical structure and performance-oriented computation.
+---
+
+# The Reference
+
+This is a reference on the construction of correct, fast numerical and generic software in
+modern C++. Its subject is the passage from a mathematical statement to a program whose
+cost is understood and whose behaviour on real hardware has been measured.
+
+## Scope
+
+Three bodies of material are treated as one subject rather than three.
+
+The first is the mathematics: algebraic structures, vector spaces, analytic notions of
+approximation and error, and the numerical methods built on them. This material fixes what
+a computation is supposed to produce and under what hypotheses.
+
+The second is the language. C++ is treated here as a notation for stating abstractions with
+their admissible domains attached — templates parameterised over types, concepts
+constraining those parameters, and a translation-time sublanguage in which substantial
+computation can be performed before the program runs.
+
+The third is the machine. Asymptotic complexity is necessary and insufficient. A dense
+matrix product and a sparse triangular solve of comparable operation count differ by an
+order of magnitude in achieved throughput, and the difference is explained by memory
+traffic, vector width and dependence structure, not by operation counts.
+
+An entry belongs in this reference when all three can be joined: when a structure can be
+stated, encoded as a constrained interface, implemented generically, costed, mapped onto
+hardware, and measured.
+
+## The derivation
+
+<Chain
+  stages={[
+    {label: 'Abstraction', detail: 'The object under study and the structure it carries.'},
+    {label: 'Specification', detail: 'Operations, laws, and the domain on which they hold.'},
+    {label: 'Type / concept', detail: 'That specification encoded as a C++ constrained interface.'},
+    {label: 'Implementation', detail: 'An algorithm written against the concept rather than a type.'},
+    {label: 'Complexity', detail: 'Operation count and working set under a declared cost model.'},
+    {label: 'Hardware mapping', detail: 'Layout, locality, vector width, parallel decomposition.'},
+    {label: 'Measurement', detail: 'Timings with machine, compiler, flags and method reported.'},
+  ]}
+/>
+
+The sequence is not a formality. Each step constrains the next, and a failure at any step is
+informative: a structure that resists formal statement usually resists a stable interface; a
+concept that cannot be satisfied by two genuinely different types is a type in disguise; an
+implementation whose measured throughput is far from its cost model has an unmodelled
+bottleneck that the model should be extended to include.
+
+## Organisation
+
+The reference is divided into five parts and two collections of supporting material.
+
+| Part | Subject |
+| --- | --- |
+| [Modern C++](/docs/modern-cpp) | Templates, concepts, constraints, metaprogramming, translation-time computation |
+| [Mathematics](/docs/mathematics) | Algebraic, linear-algebraic, analytic and probabilistic structure |
+| [High Performance](/docs/high-performance) | Cost models, memory hierarchy, layout, vectorization, parallelism |
+| [Scientific Computing](/docs/scientific-computing) | Factorizations, sparse structure, quadrature, evolution equations, differentiation |
+| [Formal C++](/docs/formal-cpp) | Types as abstractions, concepts as predicates, semantic obligation, correctness |
+| [Examples](/docs/examples) | Complete derivations from statement to measurement |
+| [Benchmarks](/docs/benchmarks) | Method, hardware, and results |
+
+Language revisions are not part of this structure. C++20, C++23 and C++26 appear as
+compatibility metadata on the entries they affect, in the form used at the head of every
+entry that has revision-dependent behaviour:
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts, constrained templates, and the requires-expression are introduced.'},
+    {std: 'C++23', note: 'Deducing this, static operator(), and a substantially larger constexpr subset.', paper: 'P0847R7'},
+    {std: 'C++26', note: 'Static reflection and expansion statements alter how generic code is generated.', paper: 'P2996'},
+  ]}
+/>
+
+This keeps entries stable as the language evolves. A revision adds a row; it does not
+reorganise the reference.
+
+## Reading order
+
+The reference is written to be entered at any point, but three paths through it are
+coherent.
+
+For a reader interested primarily in generic programming, the order is
+[Types as Abstractions](/docs/formal-cpp/types-as-abstractions),
+[Generic Programming](/docs/modern-cpp/generic-programming),
+[Concepts](/docs/modern-cpp/concepts),
+[Constraints](/docs/modern-cpp/constraints),
+[Concepts as Predicates](/docs/formal-cpp/concepts-as-predicates),
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements).
+
+For a reader interested in numerical work, the order is
+[Algebra](/docs/mathematics/algebra),
+[Linear Algebra](/docs/mathematics/linear-algebra),
+[Numerical Analysis](/docs/mathematics/numerical-analysis),
+[Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra),
+[Sparse Computation](/docs/scientific-computing/sparse-computation).
+
+For a reader interested in performance, the order is
+[Computational Complexity](/docs/high-performance/computational-complexity),
+[Memory](/docs/high-performance/memory),
+[Cache Locality](/docs/high-performance/cache-locality),
+[Data Layout](/docs/high-performance/data-layout),
+[SIMD](/docs/high-performance/simd),
+[Parallelism](/docs/high-performance/parallelism).
+
+## Conventions
+
+Notation, code style, cost models and measurement practice are stated once in
+[Conventions](/docs/conventions) and assumed throughout. Production details are recorded in
+the [colophon](/colophon).

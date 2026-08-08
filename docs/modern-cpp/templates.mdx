@@ -1,0 +1,251 @@
+---
+title: Templates
+sidebar_label: Templates
+sidebar_position: 2
+description: Parameterisation over types and values, the two-phase model, deduction, specialisation and instantiation cost.
+---
+
+# Templates
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Abbreviated function templates, constrained placeholders, class types as non-type template parameters.'},
+    {std: 'C++23', note: 'Deducing this permits a member function to be a template over the object argument, removing const/ref duplication.', paper: 'P0847R7'},
+    {std: 'C++26', note: 'Expansion statements iterate parameter packs and tuple-like objects with ordinary statement syntax.', paper: 'P1306'},
+  ]}
+/>
+
+## Definition
+
+A template is a parameterised pattern from which entities are generated. The parameters
+range over types, values of structural type, and templates themselves; the entities
+generated are classes, functions, variables and aliases.
+
+<Definition title="Template">
+A template $P$ with parameter list $\langle p_1, \dots, p_k \rangle$ is a function from
+argument tuples to entities,
+$$
+P : D_1 \times \cdots \times D_k \to \mathcal{E},
+$$
+where $D_i$ is the domain of $p_i$ and $\mathcal{E}$ is the set of entities of the
+appropriate kind. The map is partial: an argument tuple outside the domain either fails to
+substitute, in which case it is removed from consideration, or produces an ill-formed
+entity, in which case the program is ill-formed.
+</Definition>
+
+The distinction in the last sentence — between failure during substitution and failure
+after it — is the entire subject of SFINAE, and the reason concepts were introduced.
+
+## Motivation
+
+Two forms of parameterisation compete. Runtime polymorphism selects an implementation
+through an indirection at each call, and pays for it in a branch that the hardware may or
+may not predict, in a barrier to inlining, and in the loss of every optimisation that
+depends on knowing the concrete operation. Compile-time parameterisation selects the
+implementation during translation, at the cost of generating code per argument tuple.
+
+For numerical kernels, the difference is decisive. A `dot` product written against a virtual
+`Scalar` interface performs one indirect call per element; the same code as a template
+inlines to a fused multiply-add and vectorizes. The abstraction penalty of the template form
+is zero, in the precise sense that the generated code is what a hand-written monomorphic
+version would be.
+
+## Formal formulation
+
+Substitution and instantiation are two distinct maps. Substitution
+$\sigma : P \times \mathbf{a} \to \tilde{P}$ replaces parameters by arguments in the
+immediate context of the declaration. Instantiation generates the definition. Failure has
+different consequences at the two stages:
+
+$$
+\text{substitution failure} \Rightarrow \text{candidate removed}, \qquad
+\text{instantiation failure} \Rightarrow \text{ill-formed}.
+$$
+
+Only the *immediate context* participates in the first. This is why a trait written in terms
+of a return type is a filter, while the same condition discovered inside a function body is
+a hard error — an asymmetry that generic libraries were built around for two decades and
+that constrained templates now express directly.
+
+Name lookup in templates proceeds in two phases. Non-dependent names are looked up at
+definition, dependent names at instantiation, the latter by ordinary unqualified lookup at
+the point of definition together with argument-dependent lookup at the point of
+instantiation:
+
+$$
+\mathrm{lookup}(n) =
+\begin{cases}
+\mathrm{lookup}_{\text{def}}(n) & n \text{ non-dependent} \\
+\mathrm{lookup}_{\text{def}}(n) \cup \mathrm{ADL}_{\text{inst}}(n) & n \text{ dependent.}
+\end{cases}
+$$
+
+Customisation points in the standard library are built on the second case, and the
+`std::ranges` niebloids exist to close the loopholes it opens.
+
+## C++ representation
+
+A function template, its constrained form, and its abbreviated form denote the same entity:
+
+```cpp
+#include <concepts>
+#include <ranges>
+
+namespace hpc {
+
+template <std::ranges::input_range R>
+    requires std::floating_point<std::ranges::range_value_t<R>>
+constexpr auto sum(R&& r) -> std::ranges::range_value_t<R>;
+
+// Equivalent, with the constraint written as a placeholder.
+constexpr auto sum(std::ranges::input_range auto&& r)
+    -> std::ranges::range_value_t<decltype(r)>;
+
+}  // namespace hpc
+```
+
+Class templates parameterised over values are the mechanism by which dimensions enter the
+type system:
+
+```cpp
+#include <array>
+#include <cstddef>
+
+namespace hpc {
+
+template <class T, std::size_t Rows, std::size_t Cols>
+class fixed_matrix {
+public:
+    static constexpr std::size_t rows = Rows;
+    static constexpr std::size_t cols = Cols;
+
+    constexpr T& operator()(std::size_t i, std::size_t j) noexcept {
+        return storage_[i * Cols + j];
+    }
+
+    constexpr const T& operator()(std::size_t i, std::size_t j) const noexcept {
+        return storage_[i * Cols + j];
+    }
+
+private:
+    std::array<T, Rows * Cols> storage_{};
+};
+
+// Conformability is a type error rather than a runtime check.
+template <class T, std::size_t M, std::size_t K, std::size_t N>
+constexpr auto operator*(const fixed_matrix<T, M, K>& A, const fixed_matrix<T, K, N>& B)
+    -> fixed_matrix<T, M, N>;
+
+}  // namespace hpc
+```
+
+The signature of `operator*` states the conformability rule $A \in F^{m \times k}$,
+$B \in F^{k \times n} \Rightarrow AB \in F^{m \times n}$ as a deduction problem: a
+non-conforming call does not fail an assertion, it fails to deduce.
+
+## Implementation
+
+Partial specialisation is the dispatch mechanism for structure that cannot be expressed as a
+constraint. Full specialisation of function templates is avoided in favour of overloading,
+since the former does not participate in partial ordering.
+
+```cpp
+#include <complex>
+#include <type_traits>
+
+namespace hpc {
+
+template <class T>
+struct field_traits {
+    using scalar_type = T;
+    static constexpr bool is_complex = false;
+};
+
+template <class T>
+struct field_traits<std::complex<T>> {
+    using scalar_type = T;
+    static constexpr bool is_complex = true;
+};
+
+// The inner product is conjugate-linear in its first argument over ℂ and
+// bilinear over ℝ; the trait selects between the two without a branch.
+template <class T>
+constexpr T conjugate_if_complex(const T& x) noexcept {
+    if constexpr (field_traits<T>::is_complex) {
+        return std::conj(x);
+    } else {
+        return x;
+    }
+}
+
+}  // namespace hpc
+```
+
+Instantiation cost is a design parameter. Each distinct argument tuple produces a distinct
+entity, and the compiler's memoisation is per translation unit. Two techniques bound the
+cost: erasing the parts of an implementation that do not depend on the parameters into a
+non-template base or free function, and reducing the number of distinct instantiations by
+constraining parameters to a canonical form — taking `std::span<const T>` rather than an
+arbitrary contiguous range, for example, so that all callers collapse to one instantiation.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Instantiate a template with k distinct argument tuples', time: 'Θ(k · s)', space: 'Θ(k · s)', note: 's = size of the definition; per translation unit'},
+    {operation: 'Overload resolution over n candidates', time: 'Θ(n²) worst case', space: 'Θ(n)', note: 'Pairwise partial ordering'},
+    {operation: 'Deduce arguments for one candidate', time: 'Θ(d)', space: 'Θ(d)', note: 'd = structural size of the parameter types'},
+  ]}
+  unit="translation, per translation unit"
+/>
+
+Template instantiation is a build-time cost with no runtime component, but build time is a
+real constraint on a numerical library: a header that instantiates a dense factorization for
+four scalar types and three storage orders is twelve times the work, in every translation
+unit that includes it.
+
+## Performance considerations
+
+The runtime benefit of templates is monomorphisation. Each instantiation sees concrete
+types, so arithmetic inlines, loop bounds become constants when they are template
+parameters, and the vectorizer has the trip count it needs to avoid a scalar remainder.
+
+Fixed dimensions as template parameters allow full unrolling and register blocking of small
+kernels, which is why fixed-size $3 \times 3$ and $4 \times 4$ arithmetic in geometry codes
+is written this way. The technique does not scale: unrolling a $64 \times 64$ product
+exhausts the instruction cache and the register file long before it exhausts the loop.
+
+Code size is the counterweight. Excessive instantiation degrades instruction-cache
+behaviour, and an inner loop that no longer fits in the L1 instruction cache loses more than
+the abstraction saved. The rule applied in this reference is to parameterise the kernel and
+erase the driver.
+
+## Limitations
+
+Templates are checked at instantiation, so an uninstantiated template is largely unchecked.
+Constraints improve the situation at the interface but not inside the definition: a
+constrained template whose body uses an operation not implied by its constraints compiles
+until someone instantiates it.
+
+Diagnostics remain proportional to instantiation depth rather than to the mistake.
+Constraints truncate the depth at which failure is reported, which is their main practical
+contribution.
+
+Separate compilation of templates does not exist outside modules; the definition must be
+visible, which couples build time to interface design.
+
+## Related entries
+
+[Generic Programming](/docs/modern-cpp/generic-programming) is the discipline templates
+serve; [Concepts](/docs/modern-cpp/concepts) and
+[Constraints](/docs/modern-cpp/constraints) supply the domain descriptions;
+[Metaprogramming](/docs/modern-cpp/metaprogramming) treats templates as a computation over
+types.
+
+## References
+
+- D. Vandevoorde, N. Josuttis and D. Gregor, *C++ Templates: The Complete Guide*, 2nd ed.,
+  Addison-Wesley, 2017.
+- ISO/IEC 14882, clauses on templates, deduction and partial ordering.
+- B. Stroustrup and G. Dos Reis, *Concepts: Linguistic Support for Generic Programming*,
+  OOPSLA 2006, for the historical motivation.

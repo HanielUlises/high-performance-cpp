@@ -1,0 +1,246 @@
+---
+title: Constraints
+sidebar_label: Constraints
+sidebar_position: 3
+description: Subsumption as a decidable approximation of implication, and the design discipline that makes the approximation adequate.
+---
+
+# Constraints
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Normalisation into atomic constraints; subsumption defined on the normal forms; partial ordering by constraints.'},
+    {std: 'C++23', note: 'Defect resolutions on the identity of atomic constraints and on constrained member functions.'},
+    {std: 'C++26', note: 'Contracts extend constraint-like reasoning from types to values, at runtime rather than during translation.', paper: 'P2900'},
+  ]}
+/>
+
+## Definition
+
+The mechanism is described in [Constraints](/docs/modern-cpp/constraints); this entry treats its
+logical content.
+
+<Definition title="The two relations">
+For constraint expressions $P$ and $Q$ define
+$$
+P \models Q \;\iff\; \forall \mathbf{T}.\; P(\mathbf{T}) \Rightarrow Q(\mathbf{T})
+\qquad \text{(semantic entailment)},
+$$
+$$
+P \sqsupseteq Q \;\iff\; \text{$P$ subsumes $Q$ by the normalisation rules}
+\qquad \text{(syntactic subsumption)}.
+$$
+Subsumption is sound with respect to entailment, $P \sqsupseteq Q \Rightarrow P \models Q$, and
+incomplete: there are $P, Q$ with $P \models Q$ and $P \not\sqsupseteq Q$.
+</Definition>
+
+## Motivation
+
+Overload resolution must choose between candidates deterministically, in bounded time, and
+without evaluating anything about arbitrary types. Entailment is not available: deciding
+$P \models Q$ requires quantifying over all types, and even restricted forms are undecidable
+because atomic constraints may involve arbitrary constant expressions.
+
+Subsumption is the computable surrogate. It compares normal forms structurally, terminates, and
+never orders two constraints in a way that contradicts entailment. The price is incompleteness,
+and the design discipline for generic libraries is entirely a matter of working within it.
+
+## Formal formulation
+
+Normalisation produces a formula over atomic constraints:
+
+$$
+\mathrm{norm}(C) = \bigvee_{i \in I} \bigwedge_{j \in J_i} A_{ij}.
+$$
+
+Only `&&` and `||` appearing syntactically in a constraint decompose; every other expression
+becomes an atom, together with the parameter mapping under which it was reached.
+
+Subsumption on disjunctive normal forms is
+
+$$
+P \sqsupseteq Q \iff \forall i \in I_P\; \exists k \in I_Q\; \forall l \in J_k\; \exists j \in J_i : A^P_{ij} \equiv A^Q_{kl},
+$$
+
+with $\equiv$ *identity* of atomic constraints: same source expression, equivalent parameter
+mapping. Identity is not equality of meaning and not even equality of spelling across
+declarations; two textually identical expressions written in two places are distinct atoms.
+
+<Proposition title="Incompleteness by example">
+Take $A$ to be the expression `sizeof(T) >= 8` written in one place and $B$ to be
+`sizeof(T) >= 4` written in another. Then $A \models B$, since every type of size at least 8 has
+size at least 4. But $A \not\equiv B$, so $A \not\sqsupseteq B$, and two overloads constrained
+respectively by $A$ and by $B$ are ambiguous for any type satisfying both.
+</Proposition>
+
+<Proposition title="Refinement restores ordering">
+Let $Q$ be a concept and $P := Q \land R$ for some further constraint $R$. Then
+$\mathrm{norm}(P) = \mathrm{norm}(Q) \land \mathrm{norm}(R)$, every atom of $Q$ appears in $P$
+with the same identity, and hence $P \sqsupseteq Q$. Ordering by refinement is therefore always
+available, whatever the atoms involved.
+</Proposition>
+
+The second proposition is the whole design rule: build stronger constraints by conjoining
+weaker ones, never by restating them.
+
+## C++ representation
+
+The rule applied, and the rule violated:
+
+```cpp
+#include <concepts>
+#include <ranges>
+
+namespace hpc {
+
+template <class R>
+concept Sequence = std::ranges::input_range<R>;
+
+// Correct: Sequence appears as a conjunct, so its atoms are shared and
+// IndexedSequence subsumes Sequence.
+template <class R>
+concept IndexedSequence = Sequence<R> && std::ranges::random_access_range<R>;
+
+// Incorrect: the requirements of Sequence are restated, producing distinct
+// atoms. No subsumption relation holds with Sequence.
+template <class R>
+concept RestatedIndexedSequence =
+    std::ranges::input_range<R> && std::ranges::random_access_range<R>;
+
+}  // namespace hpc
+```
+
+In this particular case the standard concepts are themselves defined by refinement, so
+`random_access_range` subsumes `input_range` and both forms happen to order. The failure appears
+as soon as a requirement is expressed as a bare trait:
+
+```cpp
+#include <type_traits>
+
+namespace hpc {
+
+// Two independent atoms: no ordering, and any type satisfying both makes
+// the call ambiguous.
+template <class T> requires std::is_arithmetic_v<T>
+void process(T);
+
+template <class T> requires std::is_arithmetic_v<T> && std::is_signed_v<T>
+void process(T);
+
+}  // namespace hpc
+```
+
+The second declaration repeats the *expression* `std::is_arithmetic_v<T>`, and because the two
+occurrences are distinct expressions in the source they are distinct atoms. Wrapping the trait
+in a named concept, used by both, is the fix:
+
+```cpp
+#include <type_traits>
+
+namespace hpc {
+
+template <class T>
+concept Arithmetic = std::is_arithmetic_v<T>;
+
+template <class T>
+concept SignedArithmetic = Arithmetic<T> && std::is_signed_v<T>;
+
+template <Arithmetic T> void process_v2(T);
+template <SignedArithmetic T> void process_v2(T);   // ordered: preferred
+
+}  // namespace hpc
+```
+
+The named concept has exactly one occurrence of the atom, and every use of the name refers to
+it.
+
+## Implementation
+
+Three rules, applied without exception in this reference.
+
+Every requirement that appears in more than one constraint is a named concept. Traits are
+wrapped before they are used twice.
+
+Every refinement conjoins the concept it refines. A refinement that restates requirements is a
+defect even when it currently happens to order.
+
+Constraint sets are conjunctions of named concepts. Disjunctions are used only where genuinely
+alternative capabilities are meant, since they multiply the size of the disjunctive normal form
+and can make subsumption testing expensive.
+
+Where two capabilities genuinely do not order — a type may be contiguous, or sized, or both, and
+neither implies the other — the resolution is a third overload constrained by their conjunction,
+rather than an attempt to force an ordering:
+
+```cpp
+#include <ranges>
+
+namespace hpc {
+
+template <std::ranges::contiguous_range R> void f(R&&);
+template <std::ranges::sized_range R> void f(R&&);
+// Ambiguous for a type that is both; the third declaration disambiguates.
+template <class R>
+    requires (std::ranges::contiguous_range<R> && std::ranges::sized_range<R>)
+void f(R&&);
+
+}  // namespace hpc
+```
+
+The third subsumes both, so it is preferred exactly where both apply.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Normalisation, expansion size s', time: 'Θ(s)', space: 'Θ(s)', note: 'Once per constraint expression'},
+    {operation: 'Satisfaction, k atoms', time: 'O(k)', space: 'O(1)', note: 'Short-circuited, memoised'},
+    {operation: 'Subsumption, conjunctive normal forms', time: 'O(mn)', space: 'O(m+n)', note: 'The common case'},
+    {operation: 'Subsumption with nested disjunctions', time: 'Exponential', space: 'Exponential', note: 'DNF blow-up'},
+    {operation: 'Partial ordering, c candidates', time: 'O(c²) subsumption tests', space: 'O(c)', note: 'Pairwise'},
+    {operation: 'Deciding entailment', time: 'Undecidable', space: '—', note: 'Not attempted by the language'},
+  ]}
+  unit="translation"
+/>
+
+## Performance considerations
+
+No runtime cost exists. The build-time cost is dominated by the $O(c^2)$ pairwise subsumption
+tests over an overload set, so large uniformly constrained overload sets are the pattern to
+avoid; splitting on a cheap discriminating concept reduces the candidate count before ordering
+begins.
+
+Disjunctions are the one construct that can make constraint checking genuinely expensive.
+Constraint sets written as conjunctions of named concepts stay linear in practice, which is
+another reason for the design rules above.
+
+## Limitations
+
+Incompleteness is permanent: subsumption cannot be extended to full entailment because entailment
+is undecidable. Constraints that a designer sees as ordered may be ambiguous to the compiler,
+and the discipline exists to keep the two views aligned.
+
+Atomic-constraint identity is fragile with respect to refactoring. Moving a requirement from a
+concept definition into a `requires`-clause changes the atom's identity and can silently remove
+an ordering that other code depended on. Compilation failures result, which is the good case;
+selection of a different overload is possible where a fallback exists.
+
+Constraints bound types, not values. Positive definiteness, sortedness, non-aliasing and index
+ranges are value properties and belong to preconditions and contracts.
+
+Diagnostics for ambiguity report the candidates rather than the missing subsumption, so the
+cause must be inferred from the normal forms.
+
+## Related entries
+
+[Constraints](/docs/modern-cpp/constraints) for the mechanism and syntax;
+[Concepts as Predicates](/docs/formal-cpp/concepts-as-predicates) for model classes;
+[Compile-Time Reasoning](/docs/formal-cpp/compile-time-reasoning) for the boundary of what the
+translator establishes.
+
+## References
+
+- ISO/IEC 14882, clauses on constraint normalisation and partial ordering by constraints.
+- A. Sutton, *Constraint normalization and subsumption*, committee papers.
+- G. Dos Reis and B. Stroustrup, *Specifying C++ Concepts*, POPL 2006.
+- R. Nieuwenhuis and A. Oliveras, on the decidability of fragments of first-order entailment.

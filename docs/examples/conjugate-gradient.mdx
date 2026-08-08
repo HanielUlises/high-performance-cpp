@@ -1,0 +1,267 @@
+---
+title: Conjugate Gradient
+sidebar_label: Conjugate Gradient
+sidebar_position: 3
+description: A complete derivation of the conjugate-gradient method, written against an operator concept rather than a matrix type.
+---
+
+# Conjugate Gradient
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts express the operator requirement, which is what makes the method matrix-free.'},
+    {std: 'C++23', note: 'std::expected reports non-convergence as a value; std::mdspan describes structured operators.', paper: 'P0323R12'},
+    {std: 'C++26', note: 'std::linalg supplies the dense kernels used by preconditioners; senders express asynchronous operator application.', paper: 'P1673R13, P2300R10'},
+  ]}
+/>
+
+## Abstraction
+
+<Definition title="The problem and the method">
+For $A \in \mathbb{R}^{n\times n}$ symmetric positive definite and $b \in \mathbb{R}^n$, solving
+$Ax = b$ is equivalent to minimising the quadratic
+$$
+\phi(x) = \tfrac{1}{2} x^{\mathsf{T}}Ax - b^{\mathsf{T}}x,
+$$
+whose gradient is $\nabla\phi(x) = Ax - b = -r$. The conjugate-gradient method minimises $\phi$
+over the expanding Krylov subspaces
+$$
+\mathcal{K}_k(A, b) = \operatorname{span}\{b, Ab, A^2b, \dots, A^{k-1}b\},
+$$
+generating search directions that are $A$-orthogonal: $p_i^{\mathsf{T}}Ap_j = 0$ for $i \neq j$.
+</Definition>
+
+The $A$-orthogonality is what makes each one-dimensional minimisation final: a direction once
+minimised over is never revisited, so the method terminates in at most $n$ steps in exact
+arithmetic.
+
+## Specification
+
+The iteration requires, of the operator: an application $x \mapsto Ax$, symmetry, and positive
+definiteness. It requires, of the vector space: addition, scalar multiplication, and an inner
+product. It requires nothing else — in particular, no access to entries of $A$.
+
+<Requirement title="Operator obligations">
+S1. $\langle Ax, y\rangle = \langle x, Ay\rangle$ for all $x, y$ (symmetry).
+S2. $\langle Ax, x\rangle > 0$ for all $x \neq 0$ (positive definiteness).
+S3. `apply` is a pure function of its input.
+Violating S1 or S2 causes the method to stall, diverge, or produce a division by a
+non-positive quantity, with no diagnostic from the type system.
+</Requirement>
+
+Convergence is governed by the condition number in the $A$-norm:
+
+$$
+\lVert x_k - x^\* \rVert_A \le 2 \left( \frac{\sqrt{\kappa} - 1}{\sqrt{\kappa} + 1} \right)^{k}
+\lVert x_0 - x^\* \rVert_A, \qquad \kappa = \kappa_2(A),
+$$
+
+so the iteration count to a fixed relative accuracy is $O(\sqrt{\kappa}\,\log(1/\varepsilon))$.
+
+## Type and concept
+
+```cpp
+#include <concepts>
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// The whole requirement: apply a linear operator to a vector.
+// Semantic requirements S1–S3 above are unchecked.
+template <class A>
+concept SelfAdjointOperator = requires(const A& op, std::span<const double> x,
+                                       std::span<double> y) {
+    { op.dimension() } -> std::convertible_to<std::size_t>;
+    op.apply(x, y);                 // y ← A x
+};
+
+// An optional preconditioner: approximates A⁻¹, must itself be symmetric
+// positive definite.
+template <class M>
+concept Preconditioner = requires(const M& m, std::span<const double> r,
+                                  std::span<double> z) {
+    m.apply(r, z);                  // z ← M⁻¹ r
+};
+
+}  // namespace hpc
+```
+
+Models of `SelfAdjointOperator` in this reference: a dense symmetric matrix, a CSR matrix from
+[Sparse Computation](/docs/scientific-computing/sparse-computation), a matrix-free stencil from
+[Partial Differential Equations](/docs/scientific-computing/pdes), and a Gram operator
+$B^{\mathsf{T}}B$ applied as two products without forming the product. The fourth is the case
+that justifies the abstraction: forming $B^{\mathsf{T}}B$ costs $\Theta(mn^2)$ and squares the
+condition number, and applying it costs $\Theta(mn)$ and does neither.
+
+## Implementation
+
+```cpp
+#include <cmath>
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+struct cg_result {
+    std::size_t iterations;
+    double residual_norm;
+    bool converged;
+};
+
+// Solves A x = b. Workspace: three vectors of length n, supplied by the
+// caller; the routine allocates nothing.
+//
+// Preconditions:
+//   P1. A satisfies S1–S3.
+//   P2. b, x, r, p, Ap all have length A.dimension().
+//   P3. x contains an initial guess (zero is admissible).
+template <SelfAdjointOperator Operator>
+cg_result conjugate_gradient(const Operator& A,
+                             std::span<const double> b,
+                             std::span<double> x,
+                             std::span<double> r,
+                             std::span<double> p,
+                             std::span<double> Ap,
+                             double relative_tolerance,
+                             std::size_t max_iterations)
+{
+    const std::size_t n = b.size();
+
+    A.apply(x, Ap);
+    for (std::size_t i = 0; i < n; ++i) {
+        r[i] = b[i] - Ap[i];
+        p[i] = r[i];
+    }
+
+    double rr = inner_product(r, r);
+    const double b_norm_squared = inner_product(b, b);
+    const double stop = relative_tolerance * relative_tolerance * b_norm_squared;
+
+    for (std::size_t k = 0; k < max_iterations; ++k) {
+        if (rr <= stop) { return {k, std::sqrt(rr), true}; }
+
+        A.apply(p, Ap);
+        const double pAp = inner_product(p, Ap);
+
+        // pAp ≤ 0 means S2 is violated: the operator is not positive
+        // definite on the current Krylov subspace. Reported, not ignored.
+        if (!(pAp > 0.0)) { return {k, std::sqrt(rr), false}; }
+
+        const double alpha = rr / pAp;
+        for (std::size_t i = 0; i < n; ++i) {
+            x[i] += alpha * p[i];
+            r[i] -= alpha * Ap[i];
+        }
+
+        const double rr_next = inner_product(r, r);
+        const double beta = rr_next / rr;
+        rr = rr_next;
+
+        for (std::size_t i = 0; i < n; ++i) {
+            p[i] = r[i] + beta * p[i];
+        }
+    }
+
+    return {max_iterations, std::sqrt(rr), false};
+}
+
+}  // namespace hpc
+```
+
+The check on `pAp` is the practical treatment of an unenforceable semantic requirement: the
+violation is detected where it manifests, and reported rather than propagated.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Per iteration: operator application', time: 'cost(A)', space: '—', note: '2·nnz for sparse; dominates'},
+    {operation: 'Per iteration: two inner products', time: '4n flops', space: 'Θ(1)', note: 'Two synchronisation points in parallel'},
+    {operation: 'Per iteration: three axpy updates', time: '6n flops', space: 'Θ(1)', note: 'Bandwidth-bound'},
+    {operation: 'Working set', time: '—', space: '4n doubles', note: 'x, r, p, Ap'},
+    {operation: 'Iterations to relative tolerance ε', time: 'O(√κ log(1/ε))', space: '—', note: 'κ in the 2-norm'},
+    {operation: 'Total, 2-D Laplacian, N unknowns', time: 'Θ(N^{3/2})', space: 'Θ(N)', note: 'κ = Θ(N)'},
+    {operation: 'Total, same problem, multigrid preconditioner', time: 'Θ(N)', space: 'Θ(N)', note: 'κ = Θ(1)'},
+  ]}
+/>
+
+Arithmetic intensity per iteration, for a sparse operator with $\mathrm{nnz} = 5n$:
+
+$$
+I = \frac{2 \cdot 5n + 10n}{12 \cdot 5n + 8 \cdot 4n \cdot 2} \approx 0.15 \text{ flop/byte},
+$$
+
+so the entire iteration is bandwidth-bound, like its constituent kernels.
+
+## Hardware mapping
+
+The vector operations are memory-bound, so the profitable transformation is fusion: the three
+`axpy`-like updates and the two reductions can be reorganised so that fewer passes over the
+$\Theta(n)$ vectors are made. The standard rearrangement merges the update of $x$, $r$ and the
+computation of $\langle r, r\rangle$ into one pass, reducing the traffic from five passes to
+three.
+
+The two inner products are global reductions, and in a distributed setting each is a
+synchronisation point. Communication-avoiding variants restructure the recurrence so that the two
+reductions are merged into one per iteration, halving the latency cost at the price of a slightly
+less stable recurrence — a trade that pays at high processor counts and not at low ones.
+
+Preconditioning is where the algorithmic leverage is. Jacobi preconditioning is one vector
+multiply per iteration and reduces $\kappa$ modestly; incomplete Cholesky costs a triangular
+solve per iteration and parallelises poorly; a multigrid V-cycle costs several operator
+applications and makes the iteration count mesh-independent. The last changes the complexity
+exponent, and is worth more than every implementation optimisation combined.
+
+The residual is updated recursively, which drifts from the true residual $b - Ax_k$ as rounding
+accumulates. Recomputing it explicitly every $50$ or so iterations bounds the drift at the cost
+of one extra operator application.
+
+## Measurement
+
+| Quantity | How obtained |
+| --- | --- |
+| Time per iteration | Total time divided by iterations; compared against the traffic bound |
+| Iteration count against $\kappa$ | Sweep problem sizes; check the $\sqrt{\kappa}$ scaling |
+| Achieved bandwidth | Traffic per iteration divided by time, against a stream benchmark |
+| Preconditioner trade | Time per iteration times iteration count, for each preconditioner |
+| True against recursive residual | Both reported at termination; divergence indicates drift |
+
+Reporting iterations alone, or time alone, is uninformative: a preconditioner that halves the
+iteration count and triples the cost per iteration is a loss, and only the product distinguishes
+them.
+
+## Limitations
+
+The method requires symmetry and positive definiteness, neither checkable. For symmetric
+indefinite systems MINRES applies; for nonsymmetric systems GMRES or BiCGSTAB, with different
+storage and convergence behaviour.
+
+In floating-point arithmetic the $A$-orthogonality of the search directions is lost after
+$O(\sqrt{\kappa})$ iterations, so the finite-termination property does not hold in practice, and
+the method is used as an iterative rather than a direct method.
+
+Convergence bounds depend on the whole spectrum, not only on $\kappa$: a spectrum with a few
+outliers converges much faster than the bound suggests, which is why the bound is a guide to
+scaling rather than a prediction.
+
+The workspace is $4n$ doubles, which for very large $n$ competes with the operator's own
+storage.
+
+## Related entries
+
+[Linear Algebra](/docs/mathematics/linear-algebra) for the mathematics;
+[Inner Product](/docs/examples/inner-product) for the reduction kernel;
+[Sparse Computation](/docs/scientific-computing/sparse-computation) for the operator;
+[Partial Differential Equations](/docs/scientific-computing/pdes) for the source of these
+systems.
+
+## References
+
+- M. Hestenes and E. Stiefel, *Methods of Conjugate Gradients for Solving Linear Systems*, J.
+  Res. NBS 49(6), 1952.
+- Y. Saad, *Iterative Methods for Sparse Linear Systems*, 2nd ed., SIAM, 2003.
+- J. Shewchuk, *An Introduction to the Conjugate Gradient Method Without the Agonizing Pain*,
+  CMU, 1994.
+- A. Greenbaum, *Iterative Methods for Solving Linear Systems*, SIAM, 1997, on finite-precision
+  behaviour.

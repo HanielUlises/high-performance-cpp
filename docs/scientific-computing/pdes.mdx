@@ -1,0 +1,240 @@
+---
+title: Partial Differential Equations
+sidebar_label: Partial Differential Equations
+sidebar_position: 5
+description: Discretisation, stencil computation, solver selection, and the performance characteristics of each.
+---
+
+# Partial Differential Equations
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts state grid and operator requirements; over-aligned allocation supports vectorized stencils.'},
+    {std: 'C++23', note: 'std::mdspan with submdspan expresses grids, halos and blocked sweeps without index arithmetic in the kernel.', paper: 'P0009R18'},
+    {std: 'C++26', note: 'std::simd and senders express stencil vectorization and halo-exchange dependencies respectively.', paper: 'P1928R15, P2300R10'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Classification">
+A second-order linear PDE in two variables, $a u_{xx} + 2b u_{xy} + c u_{yy} + \cdots = 0$, is
+*elliptic* when $b^2 - ac < 0$, *parabolic* when $b^2 - ac = 0$, and *hyperbolic* when
+$b^2 - ac > 0$. The three types have different well-posed boundary conditions, different
+propagation of information, and different numerical treatment.
+</Definition>
+
+The canonical representatives are the Poisson equation $-\nabla^2 u = f$ (elliptic), the heat
+equation $u_t = \alpha \nabla^2 u$ (parabolic), and the wave equation $u_{tt} = c^2 \nabla^2 u$
+(hyperbolic).
+
+## Motivation
+
+PDEs generate the largest computations in scientific computing, and their structure determines
+the entire software architecture: the discretisation fixes the data layout, the solver fixes
+the communication pattern, and the two together fix whether the code is bandwidth-bound or
+latency-bound.
+
+The dominant fact is that discretisation produces sparse systems of enormous size. A modest
+three-dimensional problem on a $512^3$ grid has $1.3 \times 10^8$ unknowns; the matrix is never
+formed, the operator is applied matrix-free as a stencil, and the solver must have
+mesh-independent iteration counts or the computation does not finish.
+
+## Formal formulation
+
+Finite differences on a uniform grid of spacing $h$ replace derivatives by difference
+quotients. The standard second-order approximations are
+
+$$
+u''(x) \approx \frac{u(x-h) - 2u(x) + u(x+h)}{h^2} + O(h^2),
+$$
+
+giving the five-point Laplacian in two dimensions and the seven-point in three. The resulting
+matrix for the Poisson problem is symmetric positive definite with condition number
+
+$$
+\kappa_2(A) = \Theta(h^{-2}) = \Theta(N^{2/d}),
+$$
+
+for $N$ unknowns in $d$ dimensions, which is the quantity that determines iterative solver
+cost.
+
+Explicit time stepping for parabolic problems is stability-limited by the CFL-type condition
+
+$$
+\Delta t \le \frac{h^2}{2d\,\alpha},
+$$
+
+quadratic in $h$, so halving the mesh quadruples the number of steps and multiplies the total
+work by $2^{d+2}$. For hyperbolic problems the condition is $\Delta t \le h/c$, linear in $h$,
+and explicit methods remain competitive.
+
+Solver cost for the discrete Poisson problem, per unknown:
+
+| Method | Iterations | Total work | Notes |
+| --- | --- | --- | --- |
+| Jacobi | $\Theta(N^{2/d})$ | $\Theta(N^{1 + 2/d})$ | Trivially parallel |
+| Gauss–Seidel | $\Theta(N^{2/d})$ | $\Theta(N^{1+2/d})$ | Sequential without colouring |
+| Conjugate gradient | $\Theta(N^{1/d})$ | $\Theta(N^{1+1/d})$ | Needs only operator application |
+| CG with multigrid preconditioner | $\Theta(1)$ | $\Theta(N)$ | Mesh-independent |
+| Multigrid | $\Theta(1)$ | $\Theta(N)$ | Optimal |
+| FFT (separable, regular) | — | $\Theta(N \log N)$ | Restricted applicability |
+
+The gap between $\Theta(N^{1+2/d})$ and $\Theta(N)$ is the whole reason multigrid exists, and
+it grows with problem size: at $N = 10^8$ in three dimensions, the ratio is more than two
+orders of magnitude.
+
+## C++ representation
+
+The grid and the operator, with layout as a parameter and no matrix formed:
+
+```cpp
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// Matrix-free seven-point Laplacian on a uniform grid with one layer of
+// halo cells. 2·7 flops per interior point against 8·7 bytes read in the
+// worst case: intensity ≈ 0.25 flop/byte, hence bandwidth-bound.
+inline void laplacian_apply(
+    std::mdspan<const double, std::dextents<std::size_t, 3>> u,
+    std::mdspan<double, std::dextents<std::size_t, 3>> Au,
+    double inverse_h_squared) noexcept
+{
+    const std::size_t nx = u.extent(0);
+    const std::size_t ny = u.extent(1);
+    const std::size_t nz = u.extent(2);
+
+    for (std::size_t i = 1; i + 1 < nx; ++i) {
+        for (std::size_t j = 1; j + 1 < ny; ++j) {
+            for (std::size_t k = 1; k + 1 < nz; ++k) {
+                Au[i, j, k] = inverse_h_squared *
+                    (6.0 * u[i, j, k]
+                     - u[i - 1, j, k] - u[i + 1, j, k]
+                     - u[i, j - 1, k] - u[i, j + 1, k]
+                     - u[i, j, k - 1] - u[i, j, k + 1]);
+            }
+        }
+    }
+}
+
+}  // namespace hpc
+```
+
+The innermost loop runs over the fastest-varying index, so the three $k$-neighbours are in the
+same cache lines and the $i$ and $j$ neighbours are in lines already fetched by adjacent
+iterations of the outer loops — provided the plane working set fits in cache.
+
+The operator satisfies `LinearOperator`, so the Krylov methods of
+[Linear Algebra](/docs/mathematics/linear-algebra) apply without modification:
+
+```cpp
+#include <span>
+
+namespace hpc {
+
+class laplacian_operator {
+public:
+    void apply(std::span<const double> u, std::span<double> Au) const noexcept;
+    std::size_t rows() const noexcept;
+    std::size_t cols() const noexcept;
+};
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Stencil sweeps are blocked in the two slowest dimensions so that the working set of the
+innermost loop — three planes for a seven-point stencil — fits in cache. For a $512^3$ grid,
+three planes of doubles is 6 MB, which exceeds L2 and fits L3; blocking in $i$ and $j$ reduces
+this to the tile size and makes the sweep L2-resident.
+
+Temporal blocking fuses several time steps over a tile, amortising the memory traffic of a
+sweep over multiple updates. It raises the arithmetic intensity from $O(1)$ to $O(t)$ for $t$
+fused steps, at the cost of redundant halo computation, and it is the main technique for making
+explicit stencil codes compute-bound.
+
+Halo exchange structures the parallel decomposition. Each subdomain holds a border of ghost
+cells filled from its neighbours before each sweep, and the communication volume is the surface
+area of the subdomain against a volume of work, so efficiency improves with subdomain size:
+
+$$
+\frac{T_{\text{comm}}}{T_{\text{comp}}} = \Theta\!\left(\frac{n^{d-1}}{n^d}\right) = \Theta(n^{-1}).
+$$
+
+Overlapping the exchange with the computation of the interior — which does not depend on the
+halo — hides most of the communication and is the standard construction.
+
+Boundary conditions are applied by filling ghost cells rather than by branching inside the
+sweep, which keeps the inner loop free of control flow and vectorizable.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: '7-point stencil sweep, N points', time: '13N flops', space: 'Θ(N)', note: 'Intensity ≈ 0.25; bandwidth-bound'},
+    {operation: 'Temporally blocked, t steps fused', time: '13tN flops', space: 'Θ(tile)', note: 'Intensity ≈ 0.25t; can become compute-bound'},
+    {operation: 'Explicit heat equation to time T', time: 'Θ(N^{1+2/d} T)', space: 'Θ(N)', note: 'Δt = O(h²)'},
+    {operation: 'Implicit heat equation to time T', time: 'Θ(N · steps)', space: 'Θ(N)', note: 'Δt = O(h) with multigrid solve'},
+    {operation: 'CG on the discrete Poisson problem', time: 'Θ(N^{1+1/d})', space: 'Θ(N)', note: 'κ = Θ(N^{2/d})'},
+    {operation: 'Geometric multigrid V-cycle', time: 'Θ(N)', space: 'Θ(N)', note: 'O(1) cycles to discretisation error'},
+    {operation: 'Halo exchange, subdomain n^d', time: 'Θ(n^{d−1})', space: 'Θ(n^{d−1})', note: 'Overlappable with interior work'},
+  ]}
+/>
+
+## Performance considerations
+
+Stencil kernels reach 60–90 percent of achievable memory bandwidth when the layout and blocking
+are correct, and 10–20 percent when they are not. The determining factors are traversal order
+matching storage order, the plane working set fitting a cache level, and the absence of
+branches for boundaries.
+
+Vectorization of a stencil is along the contiguous dimension and requires unaligned loads for
+the neighbour offsets. Modern hardware handles these efficiently; what does not work is
+vectorizing along a strided dimension, which produces gathers.
+
+Multigrid is the case where the algorithm dominates everything. A well-implemented $\Theta(N)$
+multigrid solver beats a perfectly tuned $\Theta(N^{1.5})$ conjugate-gradient solver at every
+size that matters, and the tuning effort is better spent on the coarse-grid hierarchy than on
+the smoother's inner loop. The coarsest levels are latency-bound and are the limit on parallel
+scaling; agglomerating them onto fewer processors is the standard remedy.
+
+Explicit time stepping for parabolic problems is almost always the wrong choice at fine
+resolution, for the $\Delta t = O(h^2)$ reason above; the implicit alternative costs a solve per
+step and wins by orders of magnitude.
+
+## Limitations
+
+Finite differences require structured grids; complex geometry needs finite elements or finite
+volumes, whose assembly is irregular and whose matrices are unstructured sparse.
+
+High-order discretisations converge faster per degree of freedom for smooth solutions and
+introduce wider stencils, worse conditioning, and difficulties at boundaries and discontinuities.
+For problems with shocks, high order requires limiters that reduce the effective order where it
+is needed most.
+
+Nonlinear problems require an outer Newton iteration whose Jacobian is a differentiated stencil;
+matrix-free Newton–Krylov methods avoid forming it, at the cost of requiring a preconditioner
+that is itself matrix-free or approximated.
+
+Multigrid convergence depends on the smoother matching the operator. For anisotropic or
+strongly heterogeneous coefficients, standard smoothers fail and the remedies — line smoothers,
+semi-coarsening, algebraic multigrid — are substantially more complex.
+
+## Related entries
+
+[Differential Equations](/docs/scientific-computing/differential-equations) for time
+integration; [Sparse Computation](/docs/scientific-computing/sparse-computation) for the
+assembled case; [Cache Locality](/docs/high-performance/cache-locality) for blocking;
+[Parallelism](/docs/high-performance/parallelism) for domain decomposition.
+
+## References
+
+- R. LeVeque, *Finite Difference Methods for Ordinary and Partial Differential Equations*,
+  SIAM, 2007.
+- U. Trottenberg, C. Oosterlee and A. Schüller, *Multigrid*, Academic Press, 2001.
+- W. Briggs, V. Henson and S. McCormick, *A Multigrid Tutorial*, 2nd ed., SIAM, 2000.
+- M. Wolfe, *More Iteration Space Tiling*, Supercomputing 1989, for temporal blocking.
+- S. Williams et al., *Roofline model analysis of stencil computations*, LBNL, 2008.

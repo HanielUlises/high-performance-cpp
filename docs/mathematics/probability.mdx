@@ -1,0 +1,254 @@
+---
+title: Probability
+sidebar_label: Probability
+sidebar_position: 6
+description: Measure, expectation, concentration inequalities, and the randomised algorithms whose guarantees they support.
+---
+
+# Probability
+
+<Standards
+  entries={[
+    {std: 'C++20', note: '<random> engines and distributions are stable and reproducible; std::uniform_random_bit_generator is a concept.'},
+    {std: 'C++23', note: 'std::generator supports lazy sample streams without allocation per sample.', paper: 'P2502R2'},
+    {std: 'C++26', note: 'std::simd enables vectorized generation and evaluation of independent streams.', paper: 'P1928'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Probability space">
+A probability space is a triple $(\Omega, \mathcal{F}, \mathbb{P})$ with $\Omega$ a set,
+$\mathcal{F}$ a $\sigma$-algebra on it, and $\mathbb{P} : \mathcal{F} \to [0,1]$ a countably
+additive measure with $\mathbb{P}(\Omega) = 1$. A random variable is a measurable map
+$X : \Omega \to \mathbb{R}$, and its expectation is the integral
+$\mathbb{E}[X] = \int_\Omega X \, d\mathbb{P}$ when it exists.
+</Definition>
+
+The variance is $\operatorname{Var}(X) = \mathbb{E}[(X - \mathbb{E}X)^2]$, and for
+independent $X_1, \dots, X_n$ variances add.
+
+## Motivation
+
+Randomness enters numerical computing in three distinct ways, and conflating them causes
+errors.
+
+As a model of the problem: stochastic differential equations, Monte Carlo integration of
+high-dimensional integrals, uncertainty quantification. Here the randomness is part of the
+specification and the answer is a distribution or a functional of one.
+
+As an algorithmic device on a deterministic problem: randomised low-rank approximation,
+sketching for least squares, randomised pivoting, hashing. Here the input is deterministic and
+the algorithm's guarantees are probabilistic, holding with high probability over its internal
+randomness.
+
+As an error model: rounding errors treated as independent random variables to obtain
+$\sqrt{n}u$ estimates instead of the worst-case $nu$ bounds of
+[Numerical Analysis](/docs/mathematics/numerical-analysis). This use is heuristic — rounding
+errors are deterministic functions of the data — but it predicts observed behaviour far
+better than the worst-case bound.
+
+## Formal formulation
+
+Monte Carlo integration estimates $I = \mathbb{E}[f(X)]$ by
+
+$$
+\hat{I}_n = \frac{1}{n} \sum_{i=1}^{n} f(X_i), \qquad
+\mathbb{E}[\hat{I}_n] = I, \qquad
+\operatorname{Var}(\hat{I}_n) = \frac{\sigma^2}{n},
+$$
+
+so the root-mean-square error is $\sigma / \sqrt{n}$ — independent of dimension. This is the
+property that makes the method the only practical one for high-dimensional integration, and
+the $n^{-1/2}$ rate is the price.
+
+Concentration inequalities convert variance into probabilistic bounds. For independent $X_i$
+with $|X_i| \le M$ and $\sum \operatorname{Var}(X_i) = v$, Bernstein's inequality gives
+
+$$
+\mathbb{P}\left( \left| \sum_i (X_i - \mathbb{E}X_i) \right| \ge t \right)
+\le 2 \exp\left( \frac{-t^2/2}{v + Mt/3} \right),
+$$
+
+and Hoeffding's inequality for $X_i \in [a_i, b_i]$ gives
+
+$$
+\mathbb{P}\left( \left| \hat{I}_n - I \right| \ge t \right)
+\le 2\exp\left( \frac{-2n^2t^2}{\sum_i (b_i - a_i)^2} \right).
+$$
+
+For matrices, the corresponding tool is the matrix Bernstein inequality, which is what gives
+randomised low-rank approximation its guarantee:
+
+<Theorem title="Randomised range finder">
+Let $A \in \mathbb{R}^{m \times n}$ with singular values $\sigma_1 \ge \sigma_2 \ge \cdots$,
+let $\Omega \in \mathbb{R}^{n \times (k+p)}$ have independent standard Gaussian entries with
+oversampling $p \ge 2$, and let $Q$ be an orthonormal basis for the range of $A\Omega$. Then
+$$
+\mathbb{E} \lVert A - QQ^{\mathsf{T}}A \rVert_F \le \left(1 + \frac{k}{p-1}\right)^{1/2}
+\Big( \sum_{j > k} \sigma_j^2 \Big)^{1/2}.
+$$
+</Theorem>
+
+The optimal rank-$k$ error is $\big(\sum_{j>k}\sigma_j^2\big)^{1/2}$, so the randomised
+method is within a modest factor at cost $\Theta(mn(k+p))$ rather than $\Theta(mn^2)$.
+
+## C++ representation
+
+The generator requirement, and a sampling interface that does not own its randomness:
+
+```cpp
+#include <cmath>
+#include <concepts>
+#include <cstddef>
+#include <random>
+
+namespace hpc {
+
+template <class G>
+concept RandomBitGenerator = std::uniform_random_bit_generator<G>;
+
+// A distribution over T: sampling requires a generator, never a global one.
+template <class D, class G>
+concept Distribution =
+    RandomBitGenerator<G> &&
+    requires(D& d, G& g) {
+        typename D::result_type;
+        { d(g) } -> std::same_as<typename D::result_type>;
+    };
+
+// Monte Carlo estimate with its standard error, computed in one pass by
+// Welford's method.
+struct estimate {
+    double mean;
+    double standard_error;
+    std::size_t samples;
+};
+
+template <class F, RandomBitGenerator G>
+estimate monte_carlo(F&& integrand, G& generator, std::size_t n) {
+    double mean = 0.0;
+    double m2 = 0.0;
+    for (std::size_t i = 1; i <= n; ++i) {
+        const double x = integrand(generator);
+        const double delta = x - mean;
+        mean += delta / static_cast<double>(i);
+        m2 += delta * (x - mean);
+    }
+    const double variance = n > 1 ? m2 / static_cast<double>(n - 1) : 0.0;
+    return {mean, std::sqrt(variance / static_cast<double>(n)), n};
+}
+
+}  // namespace hpc
+```
+
+Welford's recurrence is used rather than accumulating $\sum x$ and $\sum x^2$, because the
+latter subtracts two large nearly equal quantities and loses all significance when the mean
+is large relative to the standard deviation.
+
+## Implementation
+
+Parallel Monte Carlo requires streams that are independent and reproducible. Splitting a
+single generator by seeding from a counter is the reliable construction; sharing one engine
+across threads is a data race, and seeding from the clock destroys reproducibility.
+
+```cpp
+#include <cstdint>
+#include <random>
+#include <vector>
+
+namespace hpc {
+
+// One independent, reproducible stream per worker, derived from a single
+// root seed by a sequence-dependent seeding scheme.
+inline std::vector<std::mt19937_64> split_streams(std::uint64_t root_seed,
+                                                  std::size_t workers) {
+    std::vector<std::mt19937_64> engines;
+    engines.reserve(workers);
+    for (std::size_t w = 0; w < workers; ++w) {
+        std::seed_seq seq{root_seed, static_cast<std::uint64_t>(w)};
+        engines.emplace_back(seq);
+    }
+    return engines;
+}
+
+}  // namespace hpc
+```
+
+Reduction of per-worker estimates must combine means and variances rather than concatenating
+samples, using the parallel form of Welford's update:
+
+$$
+m = \frac{n_a m_a + n_b m_b}{n_a + n_b}, \qquad
+M_2 = M_{2,a} + M_{2,b} + (m_b - m_a)^2 \frac{n_a n_b}{n_a + n_b}.
+$$
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Monte Carlo to RMSE ε', time: 'Θ(σ²/ε²) samples', space: 'Θ(1)', note: 'Dimension-independent'},
+    {operation: 'Quasi-Monte Carlo, smooth integrand', time: 'Θ(ε^{-1}(log n)^d)', space: 'Θ(d)', note: 'Degrades with dimension d'},
+    {operation: 'Tensor-product quadrature', time: 'Θ(ε^{-d/p})', space: 'Θ(1)', note: 'p = order; infeasible for d ≳ 6'},
+    {operation: 'Randomised rank-k SVD', time: 'Θ(mn(k+p))', space: 'Θ(m(k+p))', note: 'Against Θ(mn²) for full SVD'},
+    {operation: 'Welford update', time: 'Θ(1)', space: 'Θ(1)', note: 'Numerically stable'},
+    {operation: 'Sum-of-squares variance', time: 'Θ(1)', space: 'Θ(1)', note: 'Catastrophic cancellation'},
+  ]}
+/>
+
+The crossover in the first three rows is the whole case for Monte Carlo: at $d = 10$ and
+$p = 2$, tensor-product quadrature needs $\varepsilon^{-5}$ points and Monte Carlo needs
+$\varepsilon^{-2}$ regardless of $d$.
+
+## Performance considerations
+
+Random number generation is often the bottleneck in Monte Carlo codes, not the integrand.
+`std::mt19937_64` produces one 64-bit value per call with a large state that displaces useful
+data from cache; counter-based generators such as Philox produce a value from a key and a
+counter with no state, vectorize across lanes, and give reproducible streams by construction.
+
+The $n^{-1/2}$ rate means accuracy is expensive: one more digit costs a hundredfold increase
+in samples. Variance reduction — control variates, antithetic variates, importance sampling,
+stratification — reduces $\sigma^2$ and is worth more than any implementation tuning, since
+it changes the constant in a rate that cannot be improved.
+
+Monte Carlo parallelises with essentially no communication: each worker accumulates its own
+partial estimate and the reduction is $\Theta(p)$ at the end. This makes it the standard
+demonstration of near-linear scaling, and also the reason that scaling results from Monte
+Carlo codes say little about a machine's behaviour on communication-bound problems.
+
+Sampling from non-uniform distributions is dominated by rejection rates and by transcendental
+function calls. The Ziggurat method for normal variates avoids both in the common case, at
+the cost of a table and a rare branch that breaks vectorization when it is taken.
+
+## Limitations
+
+Pseudorandom generators are deterministic. Statistical tests can detect bad ones but cannot
+certify a good one, and a generator adequate for simulation may be inadequate where
+adversarial inputs are possible.
+
+Confidence intervals from the central limit theorem are asymptotic and are unreliable for
+heavy-tailed integrands, where the sample variance itself may not converge. Checking the tail
+behaviour of the integrand is part of using the method, not an optional refinement.
+
+Probabilistic guarantees for randomised algorithms hold with a stated failure probability,
+which is a different kind of statement from a deterministic bound and must be reported as
+such.
+
+## Related entries
+
+[Numerical Analysis](/docs/mathematics/numerical-analysis) for the statistical error model;
+[Numerical Integration](/docs/scientific-computing/numerical-integration) for the
+deterministic alternatives; [Parallelism](/docs/high-performance/parallelism) for the
+reduction structure.
+
+## References
+
+- R. Durrett, *Probability: Theory and Examples*, 5th ed., Cambridge University Press, 2019.
+- N. Halko, P.-G. Martinsson and J. Tropp, *Finding Structure with Randomness*, SIAM Review
+  53(2), 2011.
+- J. Tropp, *An Introduction to Matrix Concentration Inequalities*, Foundations and Trends in
+  Machine Learning 8, 2015.
+- B. Welford, *Note on a Method for Calculating Corrected Sums of Squares and Products*,
+  Technometrics 4(3), 1962.
+- J. Salmon et al., *Parallel Random Numbers: As Easy as 1, 2, 3*, SC11.

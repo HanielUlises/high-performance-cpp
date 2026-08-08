@@ -1,0 +1,241 @@
+---
+title: Numerical Integration
+sidebar_label: Numerical Integration
+sidebar_position: 3
+description: Quadrature rules, their order and error, adaptivity, and the dimensional barrier.
+---
+
+# Numerical Integration
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts state integrand requirements; constexpr computation of nodes and weights at translation time.'},
+    {std: 'C++23', note: 'A larger constexpr subset makes node and weight tables ordinary compile-time data.', paper: 'P1938R3'},
+    {std: 'C++26', note: 'std::simd supports evaluating an integrand at several nodes in one instruction.', paper: 'P1928R15'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Quadrature rule">
+A quadrature rule of $m$ points approximates an integral by a weighted sum of integrand
+values,
+$$
+\int_a^b f(x)\,w(x)\,dx \;\approx\; \sum_{k=1}^{m} w_k f(x_k),
+$$
+with nodes $x_k$ and weights $w_k$ determined by the rule. The rule has *degree of exactness*
+$d$ when it is exact for every polynomial of degree at most $d$.
+</Definition>
+
+## Motivation
+
+Integrals appear wherever a continuous quantity is reduced to a number: expectations,
+inner products in finite-element assembly, transforms, and normalisation constants. The
+question is always the same — how many integrand evaluations are required for a given
+accuracy — because the integrand is usually the expensive part.
+
+The answer depends on the smoothness of the integrand and the dimension of the domain. For
+smooth integrands in low dimension, Gaussian rules converge geometrically and a handful of
+points suffice. For non-smooth integrands, the achievable order is limited by the smoothness
+regardless of the rule. In high dimension, deterministic rules fail entirely and Monte Carlo
+methods are the only option; see [Probability](/docs/mathematics/probability).
+
+## Formal formulation
+
+Interpolatory rules on $m$ points have degree at least $m-1$. Gaussian rules achieve degree
+$2m-1$, the maximum possible, by choosing the nodes as the roots of the degree-$m$ orthogonal
+polynomial with respect to the weight $w$.
+
+<Theorem title="Gauss quadrature">
+Let $\{p_k\}$ be orthogonal with respect to $w$ on $[a,b]$, and let $x_1,\dots,x_m$ be the
+roots of $p_m$. Then there exist weights $w_k > 0$ such that the rule is exact for all
+polynomials of degree $\le 2m-1$, and the error is
+$$
+E_m(f) = \frac{f^{(2m)}(\xi)}{(2m)!} \int_a^b \prod_{k=1}^m (x - x_k)^2\, w(x)\,dx
+$$
+for some $\xi \in (a,b)$.
+</Theorem>
+
+The classical composite rules on $n$ subintervals of width $h = (b-a)/n$ have errors
+
+$$
+\begin{aligned}
+E_{\text{midpoint}} &= \frac{(b-a)h^2}{24} f''(\xi), \\
+E_{\text{trapezoid}} &= -\frac{(b-a)h^2}{12} f''(\xi), \\
+E_{\text{Simpson}} &= -\frac{(b-a)h^4}{180} f^{(4)}(\xi),
+\end{aligned}
+$$
+
+so their orders are 2, 2 and 4. For periodic integrands integrated over a period, the composite
+trapezoid rule converges geometrically rather than at order 2 — the Euler–Maclaurin correction
+terms vanish — which is why it is the rule of choice for Fourier and contour integrals.
+
+In $d$ dimensions a tensor-product rule with $m$ points per axis uses $m^d$ points and attains
+error $O(m^{-p})$ for a rule of order $p$, giving
+
+$$
+\varepsilon = O(N^{-p/d}), \qquad N = m^d,
+$$
+
+so the number of points needed for accuracy $\varepsilon$ is $N = O(\varepsilon^{-d/p})$. At
+$d = 10$, $p = 4$, one digit of accuracy costs a factor of $10^{2.5}$ in evaluations. Monte
+Carlo's $O(N^{-1/2})$ is dimension-independent and wins for $d \gtrsim 2p$.
+
+## C++ representation
+
+The rule as data, computed during translation:
+
+```cpp
+#include <array>
+#include <cstddef>
+
+namespace hpc {
+
+template <std::size_t M>
+struct quadrature_rule {
+    std::array<double, M> nodes;
+    std::array<double, M> weights;
+};
+
+// Gauss–Legendre on [-1, 1]; nodes are the roots of P_M, weights follow from
+// the standard formula w_k = 2 / ((1 - x_k²) P'_M(x_k)²).
+template <std::size_t M>
+consteval quadrature_rule<M> gauss_legendre();
+
+// Applying a rule to an interval by affine change of variables.
+template <std::size_t M, class F>
+constexpr double integrate(const quadrature_rule<M>& rule, F&& f,
+                           double a, double b)
+{
+    const double half_width = 0.5 * (b - a);
+    const double centre = 0.5 * (a + b);
+    double acc = 0.0;
+    for (std::size_t k = 0; k < M; ++k) {
+        acc += rule.weights[k] * f(centre + half_width * rule.nodes[k]);
+    }
+    return half_width * acc;
+}
+
+}  // namespace hpc
+```
+
+Adaptive subdivision with an embedded error estimate, which is how a tolerance is actually met:
+
+```cpp
+#include <cmath>
+#include <cstddef>
+
+namespace hpc {
+
+struct integration_result {
+    double value;
+    double error_estimate;
+    std::size_t evaluations;
+    bool converged;
+};
+
+// Gauss–Kronrod: the 2m+1-point Kronrod extension reuses all m Gauss nodes,
+// so the error estimate |G − K| costs m + 1 additional evaluations rather
+// than a full recomputation.
+template <class F>
+integration_result adaptive_quadrature(F&& f, double a, double b,
+                                       double absolute_tolerance,
+                                       double relative_tolerance,
+                                       std::size_t max_evaluations);
+
+}  // namespace hpc
+```
+
+## Implementation
+
+The error estimate is what makes a routine usable, and estimating it by comparing two
+independent rules doubles the cost. Gauss–Kronrod avoids this by nesting: the $(2m+1)$-point
+Kronrod rule contains the $m$ Gauss nodes, so the pair costs $2m+1$ evaluations rather than
+$3m+1$, and the difference between the two estimates the error of the lower-order one.
+
+Subdivision is driven by a priority queue on the per-interval error estimate, so that
+refinement occurs where the integrand is difficult. This localises the cost of a singularity or
+a sharp peak to the region containing it, converting a globally expensive problem into a
+locally expensive one.
+
+Singularities are handled by transformation rather than by refinement. An endpoint singularity
+of the form $(x-a)^{-1/2}$ is removed by the substitution $x = a + t^2$; a logarithmic
+singularity by a double-exponential transformation, which maps $[-1,1]$ to itself with a
+density that renders the endpoints unreachable and gives geometric convergence for a wide class
+of singular integrands.
+
+Nodes and weights are computed once. Small rules are computed during translation, as in
+[Compile-Time Programming](/docs/modern-cpp/compile-time-programming); large ones are computed
+at startup by the Golub–Welsch algorithm — an eigenvalue problem for a symmetric tridiagonal
+matrix — or by Newton iteration on the orthogonal polynomial.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Composite trapezoid to accuracy ε', time: 'Θ(ε^{−1/2}) evaluations', space: 'Θ(1)', note: 'Order 2'},
+    {operation: 'Composite Simpson to accuracy ε', time: 'Θ(ε^{−1/4})', space: 'Θ(1)', note: 'Order 4'},
+    {operation: 'Gauss–Legendre, analytic integrand', time: 'Θ(log(1/ε))', space: 'Θ(m)', note: 'Geometric convergence'},
+    {operation: 'Trapezoid, smooth periodic', time: 'Θ(log(1/ε))', space: 'Θ(1)', note: 'Geometric; Euler–Maclaurin terms vanish'},
+    {operation: 'Adaptive Gauss–Kronrod', time: 'Θ(k(2m+1))', space: 'Θ(k) intervals', note: 'k intervals in the queue'},
+    {operation: 'Tensor product, d dimensions', time: 'Θ(ε^{−d/p})', space: 'Θ(d)', note: 'Infeasible for d ≳ 6'},
+    {operation: 'Sparse grid (Smolyak), d dimensions', time: 'Θ(ε^{−1/p}(log 1/ε)^{d−1})', space: 'Θ(N)', note: 'Requires mixed smoothness'},
+    {operation: 'Monte Carlo, d dimensions', time: 'Θ(σ²/ε²)', space: 'Θ(1)', note: 'Dimension-independent'},
+    {operation: 'Node computation, Golub–Welsch', time: 'Θ(m²)', space: 'Θ(m)', note: 'Once, amortised'},
+  ]}
+/>
+
+## Performance considerations
+
+Cost is dominated by integrand evaluations in every case that matters, so the figure of merit is
+the evaluation count and the rule's arithmetic is irrelevant. This inverts the usual
+optimisation priorities: choosing a higher-order rule is worth more than any tuning of the
+summation.
+
+Vectorization applies at the level of nodes: evaluating the integrand at $W$ nodes
+simultaneously is straightforward when the integrand is a closed-form expression, and
+impossible when it is a black box with internal branching. Where the integrand is itself a
+simulation, the parallelism is across intervals rather than across nodes.
+
+Adaptive routines have a sequential structure — the queue is shared — and parallelise by
+processing several intervals concurrently at the cost of some wasted refinement. The waste is
+bounded by the number of workers and is usually acceptable.
+
+The summation of weighted values is a reduction and inherits the accuracy discussion of
+[Numerical Analysis](/docs/mathematics/numerical-analysis). For rules with weights of mixed
+sign, or with many points, compensated summation of the weighted values is worthwhile since it
+costs nothing relative to the evaluations.
+
+## Limitations
+
+Error estimates are heuristic. Gauss–Kronrod's estimate assumes the integrand is resolved by
+the rule; for an integrand with structure finer than the node spacing it can report a small
+error for a badly wrong answer. Randomising the subdivision or checking against a different
+rule family is the practical safeguard.
+
+Smoothness sets the achievable order. A high-order rule applied to a function with a
+discontinuous derivative converges no faster than the smoothness allows, and adaptivity that
+does not detect the discontinuity refines uniformly around it.
+
+Infinite intervals require transformation, and the choice of transformation determines whether
+the transformed integrand is well behaved. There is no universal choice.
+
+High dimension defeats every deterministic rule. Sparse grids extend the feasible range to
+perhaps $d = 20$ under a mixed-smoothness hypothesis that is rarely verifiable, and beyond that
+only randomised methods apply.
+
+## Related entries
+
+[Analysis](/docs/mathematics/analysis) for the truncation theory;
+[Probability](/docs/mathematics/probability) for Monte Carlo;
+[Compile-Time Programming](/docs/modern-cpp/compile-time-programming) for node tables;
+[Numerical Analysis](/docs/mathematics/numerical-analysis) for the summation error.
+
+## References
+
+- P. Davis and P. Rabinowitz, *Methods of Numerical Integration*, 2nd ed., Academic Press,
+  1984.
+- G. Golub and J. Welsch, *Calculation of Gauss Quadrature Rules*, Math. Comp. 23, 1969.
+- L. N. Trefethen, *Is Gauss Quadrature Better than Clenshaw–Curtis?*, SIAM Review 50(1), 2008.
+- H. Takahasi and M. Mori, *Double Exponential Formulas for Numerical Integration*, Publ. RIMS
+  9(3), 1974.

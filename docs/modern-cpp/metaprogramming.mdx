@@ -1,0 +1,267 @@
+---
+title: Metaprogramming
+sidebar_label: Metaprogramming
+sidebar_position: 6
+description: Computation over types and packs, its cost model, and its replacement by ordinary computation over values.
+---
+
+# Metaprogramming
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Class types as non-type template parameters, constexpr allocation, and concepts remove most SFINAE machinery.'},
+    {std: 'C++23', note: 'if consteval, constexpr in more contexts, and static operator() reduce the residual template machinery.'},
+    {std: 'C++26', note: 'Static reflection with splicing replaces type-list metaprogramming with ordinary constexpr code.', paper: 'P2996'},
+  ]}
+/>
+
+## Definition
+
+Template metaprogramming is computation whose inputs and outputs are types, values of
+structural type, and parameter packs, carried out by the compiler during translation.
+
+<Definition title="Metafunction">
+A metafunction is a map $F : \mathcal{T}^k \to \mathcal{T}$ or $F : \mathcal{T}^k \to V$
+realised as a class template with a member type `type` or a member value `value`, or as an
+alias or variable template. Composition of metafunctions is instantiation of one inside
+another; the compiler evaluates by instantiation and memoises each result per translation
+unit.
+</Definition>
+
+## Motivation
+
+Metaprogramming exists to make structural decisions before the program runs: selecting an
+implementation from properties of a type, computing the layout of a heterogeneous
+aggregate, unrolling a loop whose trip count is a template parameter, or verifying at
+translation time that a unit-bearing expression is dimensionally consistent.
+
+The historical form of this activity — recursive class templates computing over type lists —
+was expensive to write, expensive to compile, and produced diagnostics proportional to the
+recursion depth. Most of what it was used for has since become expressible more directly:
+predicates by concepts, branching by `if constexpr`, arithmetic by `constexpr` functions
+over ordinary values. What remains genuinely metaprogramming is manipulation of types and
+packs themselves.
+
+The residual case matters in numerical work: expression templates that fuse
+$\alpha x + \beta y$ into one traversal, dimensional analysis carried in the type, and
+compile-time selection of a blocking strategy from cache parameters are all of this kind.
+
+## Formal formulation
+
+Types under metafunctions form a category-like structure: metafunctions compose,
+$G \circ F$, and identity is `std::type_identity`. Type lists are the free monoid over
+$\mathcal{T}$: a list is $[T_1, \dots, T_n]$, concatenation is the operation, and the empty
+list is the identity. Most classical metaprogramming is fold, map and filter over this
+monoid.
+
+$$
+\mathrm{map}(F, [T_1,\dots,T_n]) = [F(T_1), \dots, F(T_n)],
+$$
+$$
+\mathrm{fold}(\oplus, e, [T_1,\dots,T_n]) = T_1 \oplus (T_2 \oplus (\cdots \oplus e)).
+$$
+
+The cost model is the important part. Let $I(T)$ denote the cost of instantiating a
+specialisation. Instantiations are memoised on the exact argument tuple, so a recursive
+metafunction of depth $n$ over one list costs $\Theta(n)$ instantiations, but a naively
+written pairwise operation over two lists of length $n$ can produce $\Theta(n^2)$ distinct
+specialisations, each retained for the translation unit. Compile time and compiler memory
+follow the instantiation count, not the source size.
+
+Pack expansion is the cheaper primitive: a fold expression over a pack of size $n$ produces
+one expression tree of size $\Theta(n)$ and no additional specialisations. Where an
+algorithm can be written as a fold expression rather than as recursion over a list, it
+should be.
+
+## C++ representation
+
+The modern forms, in decreasing order of preference.
+
+Fold expressions, for reductions over packs:
+
+```cpp
+#include <concepts>
+
+namespace hpc {
+
+template <class... Ts>
+inline constexpr bool all_floating_point = (std::floating_point<Ts> && ...);
+
+template <class T, class... Ts>
+    requires (std::same_as<T, Ts> && ...)
+constexpr T sum_all(T first, Ts... rest) noexcept {
+    return (first + ... + rest);
+}
+
+}  // namespace hpc
+```
+
+`if constexpr`, for branching on a type property with only the taken branch instantiated:
+
+```cpp
+#include <complex>
+#include <type_traits>
+
+namespace hpc {
+
+template <class T>
+struct is_complex : std::false_type {};
+
+template <class T>
+struct is_complex<std::complex<T>> : std::true_type {};
+
+template <class T>
+inline constexpr bool is_complex_v = is_complex<T>::value;
+
+template <class T>
+constexpr auto squared_magnitude(const T& x) noexcept {
+    if constexpr (is_complex_v<T>) {
+        return x.real() * x.real() + x.imag() * x.imag();
+    } else {
+        return x * x;
+    }
+}
+
+}  // namespace hpc
+```
+
+Partial specialisation, for genuine structural decomposition of a type:
+
+```cpp
+#include <cstddef>
+#include <type_traits>
+
+namespace hpc {
+
+// The scalar type at the bottom of an arbitrarily nested container-like type.
+template <class T>
+struct scalar_of { using type = T; };
+
+template <template <class, std::size_t> class Array, class T, std::size_t N>
+struct scalar_of<Array<T, N>> { using type = typename scalar_of<T>::type; };
+
+template <class T>
+using scalar_of_t = typename scalar_of<T>::type;
+
+}  // namespace hpc
+```
+
+## Implementation
+
+An expression template is the case where metaprogramming pays in numerical code. The
+objective is to evaluate $z = \alpha x + \beta y$ in a single pass, without materialising
+the intermediate $\alpha x$.
+
+```cpp
+#include <concepts>
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+template <class Expr>
+concept VectorExpression = requires(const Expr& e, std::size_t i) {
+    { e.size() }  -> std::convertible_to<std::size_t>;
+    { e[i] }      -> std::convertible_to<double>;
+};
+
+template <VectorExpression L, VectorExpression R>
+class sum_expression {
+public:
+    constexpr sum_expression(const L& lhs, const R& rhs) noexcept
+        : lhs_{lhs}, rhs_{rhs} {}
+
+    constexpr std::size_t size() const noexcept { return lhs_.size(); }
+
+    constexpr double operator[](std::size_t i) const noexcept {
+        return lhs_[i] + rhs_[i];
+    }
+
+private:
+    const L& lhs_;
+    const R& rhs_;
+};
+
+template <VectorExpression L, VectorExpression R>
+constexpr auto operator+(const L& lhs, const R& rhs) noexcept {
+    return sum_expression<L, R>{lhs, rhs};
+}
+
+// Evaluation happens once, at assignment, in a single traversal.
+template <VectorExpression E>
+constexpr void assign(std::span<double> out, const E& e) noexcept {
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        out[i] = e[i];
+    }
+}
+
+}  // namespace hpc
+```
+
+For $n$-element vectors, the naive form performs three traversals and allocates two
+temporaries; the fused form performs one traversal and allocates nothing. On
+bandwidth-bound data the reduction in memory traffic from $5n$ to $3n$ words is the entire
+speed-up, and it is obtained without changing the calling syntax.
+
+The construction carries a well-known hazard: the expression holds references, so binding it
+to a variable that outlives the operands produces a dangling read. The rule applied here is
+that expression objects are unnamed temporaries consumed in the full-expression that creates
+them, enforced by returning them only from operators and never storing them.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Recursive metafunction over a list of n types', time: 'Θ(n) instantiations', space: 'Θ(n) retained', note: 'Memoised per translation unit'},
+    {operation: 'Pairwise metafunction over two lists of n', time: 'Θ(n²) instantiations', space: 'Θ(n²)', note: 'Dominates compiler memory'},
+    {operation: 'Fold expression over a pack of n', time: 'Θ(n) expression nodes', space: 'Θ(n)', note: 'No new specialisations'},
+    {operation: 'if constexpr branch', time: 'Θ(1)', space: 'Θ(taken branch)', note: 'Discarded branch not instantiated'},
+    {operation: 'αx + βy, three-temporary form', time: 'Θ(n) runtime', space: 'Θ(n)', note: '5n words of traffic'},
+    {operation: 'αx + βy, fused expression template', time: 'Θ(n) runtime', space: 'Θ(1)', note: '3n words of traffic'},
+  ]}
+/>
+
+## Performance considerations
+
+Metaprogramming has no runtime cost of its own; its runtime effect is entirely in what it
+causes to be generated. Fusion removes memory traffic, which on bandwidth-bound kernels is
+the dominant term. Compile-time selection of a blocking factor removes a branch from an
+inner loop and permits full unrolling.
+
+Against this stands compile time, which is a first-order cost in a numerical library. A
+translation unit that instantiates a quadratic metafunction over a list of a few dozen types
+can occupy gigabytes of compiler memory. Where a computation can be moved from types to
+`constexpr` values, it should be: the compiler evaluates values with an interpreter whose
+cost is linear and whose intermediate results are not retained.
+
+Expression templates interact with the optimiser unpredictably at depth. A three-term fusion
+inlines and vectorizes reliably; a fifteen-term one may exceed inlining thresholds, at which
+point the abstraction becomes a chain of calls and the traffic saving is lost to call
+overhead. Depth limits belong in the design, and the generated code is checked rather than
+assumed.
+
+## Limitations
+
+Errors in template metaprograms are reported as instantiation backtraces, and while
+concepts truncate them at interfaces, failures inside a metafunction still surface at depth.
+
+Types cannot be enumerated, printed or introspected before C++26. The absence of reflection
+is why type lists must be constructed by hand, and why every library has its own.
+
+Metafunction results are not first-class: a type cannot be returned from an ordinary
+function, so alternation between the value world and the type world requires a change of
+notation at every boundary. Reflection with splicing removes exactly this boundary, and is
+expected to retire most of the technique described here.
+
+## Related entries
+
+[Compile-Time Programming](/docs/modern-cpp/compile-time-programming) covers the value-level
+alternative; [Type-Level Programming](/docs/formal-cpp/type-level-programming) the formal
+reading; [Data Layout](/docs/high-performance/data-layout) the layout decisions that
+metaprogramming is most often used to make.
+
+## References
+
+- D. Abrahams and A. Gurtovoy, *C++ Template Metaprogramming*, Addison-Wesley, 2004.
+- T. Veldhuizen, *Expression Templates*, C++ Report 7(5), 1995.
+- A. Sutton et al., *Reflection for C++26*, P2996.

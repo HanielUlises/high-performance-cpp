@@ -1,0 +1,231 @@
+---
+title: Constraints
+sidebar_label: Constraints
+sidebar_position: 5
+description: Normalisation, atomic constraints, subsumption, and the partial ordering of declarations by constraint.
+---
+
+# Constraints
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Constraint normalisation, atomic constraints, subsumption and partial ordering by constraints.'},
+    {std: 'C++23', note: 'Defect resolutions clarify the identity of atomic constraints and the treatment of constrained members.'},
+    {std: 'C++26', note: 'Contracts constrain values at runtime, complementing constraints on types at translation time.', paper: 'P2900'},
+  ]}
+/>
+
+## Definition
+
+A constraint is a compile-time boolean condition attached to a declaration, restricting the
+template arguments for which the declaration is viable and ordering it relative to other
+declarations.
+
+<Definition title="Atomic constraint">
+An atomic constraint is a pair $(e, \mu)$ of an expression $e$ appearing in a constraint
+after normalisation, and a mapping $\mu$ from the parameters of $e$ to template arguments.
+Two atomic constraints are *identical* when they originate from the same expression in the
+source and their parameter mappings are equivalent. Identity is syntactic: two textually
+distinct expressions denoting the same condition are never identical.
+</Definition>
+
+That last sentence is the source of every surprise in this area, and the reason constraints
+are written as named concepts rather than inline expressions.
+
+## Motivation
+
+Constraints answer two questions that concepts alone do not. The first is which declarations
+are viable for a given call — a filtering question, answered by satisfaction. The second is
+which of several viable declarations is preferred — an ordering question, answered by
+subsumption.
+
+The ordering question is the important one for library design. A generic algorithm typically
+has a portable implementation and one or more specialised implementations valid under
+stronger requirements: a general strided access path and a contiguous one, a scalar path and
+a vectorized one. Before C++20 the choice among them was expressed with mutually exclusive
+`enable_if` conditions, which had to be written and maintained so as never to overlap; every
+new specialisation required editing the conditions of the existing ones. Constraint ordering
+replaces this with a local statement: each declaration says what it needs, and the more
+demanding declaration wins wherever both apply.
+
+## Formal formulation
+
+Normalisation maps a constraint expression to a formula over atomic constraints:
+
+$$
+\begin{aligned}
+\mathrm{norm}(C_1 \land C_2) &= \mathrm{norm}(C_1) \land \mathrm{norm}(C_2), \\
+\mathrm{norm}(C_1 \lor C_2) &= \mathrm{norm}(C_1) \lor \mathrm{norm}(C_2), \\
+\mathrm{norm}(C\langle \mathbf{a} \rangle) &= \mathrm{norm}(\text{definition of } C)[\mathbf{p} \mapsto \mathbf{a}], \\
+\mathrm{norm}(e) &= (e, \mu) \quad\text{otherwise.}
+\end{aligned}
+$$
+
+Only `&&` and `||` written directly in a constraint decompose. A conjunction hidden inside a
+type trait — `std::is_integral_v<T> && std::is_signed_v<T>` written as one atom via a
+variable template — is a single atom and decomposes no further.
+
+Subsumption is defined on the normal forms. Writing them in disjunctive normal form,
+$P = \bigvee_i \bigwedge_j A_{ij}$ and $Q = \bigvee_k \bigwedge_l B_{kl}$, $P$ subsumes $Q$
+when
+
+$$
+\forall i\; \exists k\; \forall l\; \exists j : A_{ij} \equiv B_{kl},
+$$
+
+where $\equiv$ is identity of atomic constraints. Subsumption is a preorder, and it
+*approximates* logical implication from below: if $P$ subsumes $Q$ then $P \Rightarrow Q$,
+but the converse fails routinely because implication between distinct atoms is not
+recognised.
+
+<Proposition title="Subsumption is strictly weaker than implication">
+Let $A$ be the atom `sizeof(T) >= 8` and $B$ the atom `sizeof(T) >= 4`. Every type
+satisfying $A$ satisfies $B$, so $A \Rightarrow B$; but $A \not\equiv B$, so $A$ does not
+subsume $B$, and two overloads constrained by $A$ and $B$ are ambiguous rather than ordered.
+</Proposition>
+
+The remedy is to build both constraints from a shared named concept, so that the shared part
+appears as the *same* atom in both.
+
+## C++ representation
+
+Ordering by subsumption, done correctly:
+
+```cpp
+#include <concepts>
+#include <ranges>
+
+namespace hpc {
+
+template <class R>
+concept Strided =
+    std::ranges::random_access_range<R> &&
+    requires(const R& r) { { r.stride() } -> std::convertible_to<std::size_t>; };
+
+// Refinement: Contiguous is written in terms of Strided, so the atoms of
+// Strided appear in both normal forms and subsumption is established.
+template <class R>
+concept Contiguous = Strided<R> && std::ranges::contiguous_range<R>;
+
+template <Strided R>
+double norm_squared(const R& r);      // general path
+
+template <Contiguous R>
+double norm_squared(const R& r);      // preferred where applicable
+
+}  // namespace hpc
+```
+
+The same design written with unrelated conditions fails to order:
+
+```cpp
+// Not ordered: the two constraints share no atomic constraint, so a type
+// satisfying both makes the call ambiguous.
+template <class R> requires std::ranges::random_access_range<R>
+double bad_norm(const R& r);
+
+template <class R> requires std::ranges::contiguous_range<R> && (sizeof(std::ranges::range_value_t<R>) == 8)
+double bad_norm(const R& r);
+```
+
+Here `contiguous_range` does subsume `random_access_range` — the standard concepts are
+defined by refinement — so the second is in fact preferred; the added `sizeof` atom does not
+disturb that. The failure mode appears when the two constraints are written as independent
+traits rather than as refinements, and it is diagnosed only at the ambiguous call.
+
+## Implementation
+
+Three rules keep constraint sets orderable.
+
+Constraints are expressed as named concepts, never as bare trait expressions, so that
+refinement produces shared atoms. Where a raw trait must be used in more than one place, it
+is wrapped in a concept first — the wrapper is what makes the two uses the same atom.
+
+Refinements are defined by conjoining the concept they refine, as `Contiguous` does above,
+rather than by restating its requirements. Restating produces distinct atoms with identical
+text and no subsumption relation.
+
+Constraints are ordered within a conjunction so that the cheapest and most discriminating
+atom is first, since evaluation short-circuits. A constraint whose later operands would be
+ill-formed for the types the earlier operands reject is not merely faster; it is the only
+form that compiles.
+
+Requires-clauses may also constrain non-template members of class templates, which is the
+mechanism for conditionally available members:
+
+```cpp
+#include <concepts>
+
+namespace hpc {
+
+template <class T>
+class quantity {
+public:
+    constexpr quantity operator/(const quantity& other) const
+        requires std::floating_point<T>;
+
+    // Absent, not merely ill-formed, when T is not floating-point:
+    // std::totally_ordered<quantity<T>> reflects the difference.
+};
+
+}  // namespace hpc
+```
+
+A conditionally available member changes concept satisfaction for the enclosing type, which
+is how a class template's interface is made to vary with its argument without partial
+specialisation.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Normalise a constraint of expansion size s', time: 'Θ(s)', space: 'Θ(s)', note: 'Once per constraint expression'},
+    {operation: 'Satisfy a conjunction of k atoms', time: 'O(k)', space: 'O(1)', note: 'Short-circuited, results cached'},
+    {operation: 'Subsumption, DNF of sizes m and n', time: 'O(m · n) typical', space: 'O(m + n)', note: 'Exponential blow-up possible with nested disjunctions'},
+    {operation: 'Partial ordering over c candidates', time: 'O(c²) subsumption tests', space: 'O(c)', note: 'Pairwise'},
+  ]}
+  unit="translation"
+/>
+
+## Performance considerations
+
+Constraints are erased before code generation and cost nothing at runtime.
+
+At build time they are usually a saving: a rejected candidate is rejected before its
+signature is substituted, and a diagnosis at the constraint costs a fraction of the
+instantiation it prevents. The cost that does appear is in overload sets that are large and
+uniformly constrained, where each call performs $O(c^2)$ subsumption tests; splitting such
+sets by a cheap discriminating concept restores linear behaviour.
+
+Disjunctions are the pathological case for normalisation, since the disjunctive normal form
+of nested `||` grows multiplicatively. Constraint sets in this reference are conjunctions of
+named concepts for this reason as much as for subsumption.
+
+## Limitations
+
+Subsumption is syntactic, so logically equivalent constraints that were written differently
+are unrelated, and logically stronger constraints built from different atoms do not order.
+The type system offers no way to declare that one atom implies another.
+
+Constraints restrict template arguments and not values. A requirement that a matrix be
+positive definite, or that an index be in range, is a property of a value and belongs to
+preconditions — in C++26, to contracts — not to constraints.
+
+Constraint failure is not always local: a constraint that is satisfied but whose satisfaction
+required instantiating a class template can still produce a hard error from that
+instantiation, since only the immediate context is protected.
+
+## Related entries
+
+[Concepts](/docs/modern-cpp/concepts) defines the predicates ordered here;
+[Templates](/docs/modern-cpp/templates) the resolution process constraints participate in;
+[Compile-Time Reasoning](/docs/formal-cpp/compile-time-reasoning) the general question of
+what the translator can be made to prove.
+
+## References
+
+- ISO/IEC 14882, clauses on constraint normalisation, subsumption and partial ordering by
+  constraints.
+- H. Sutter, *Concepts in C++20: Ordering by Constraints*, committee papers on subsumption.
+- R. Douglas Gregor et al., *Concepts: Linguistic Support for Generic Programming in C++*,
+  OOPSLA 2006.

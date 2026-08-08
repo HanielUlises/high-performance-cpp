@@ -1,0 +1,213 @@
+---
+title: Generic Programming
+sidebar_label: Generic Programming
+sidebar_position: 3
+description: Lifting algorithms to their weakest sufficient requirements, and the discipline that keeps the lift free of cost.
+---
+
+# Generic Programming
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Requirements become expressible in the language; ranges restate the algorithm library in terms of them.'},
+    {std: 'C++23', note: 'Range adaptors and std::mdspan extend the vocabulary to multidimensional and lazily composed data.'},
+    {std: 'C++26', note: 'Reflection permits requirements to be computed from a type rather than asserted about it.', paper: 'P2996'},
+  ]}
+/>
+
+## Definition
+
+Generic programming is the practice of stating an algorithm in terms of the weakest
+requirements under which it remains correct and efficient, and of naming those requirements
+so that they can be reasoned about independently of any type that satisfies them.
+
+<Definition title="Lifting">
+Let $f$ be an algorithm defined for a concrete type $T_0$. A *lifting* of $f$ is a family
+$\{f_T\}$ defined for all $T$ in some set $\mathcal{C} \subseteq \mathcal{T}$, with
+$T_0 \in \mathcal{C}$ and $f_{T_0} = f$, such that the correctness argument for $f_T$ uses
+only the properties defining $\mathcal{C}$. The lifting is *efficient* when the cost of
+$f_{T_0}$ obtained from the family equals the cost of the original $f$.
+</Definition>
+
+The second clause is what distinguishes this discipline from polymorphism in general. An
+abstraction that costs anything at the point of use is not admissible.
+
+## Motivation
+
+The alternative to lifting is duplication. A numerical library that implements a
+conjugate-gradient solver for `double`, then for `float`, then for a complex scalar, then
+for a distributed vector, has four correctness arguments, four sets of defects, and no
+statement anywhere of what a vector must provide for the algorithm to work.
+
+The lifted form has one implementation and one statement of requirements: the iteration
+needs an inner product, scalar multiplication, addition, and a symmetric positive-definite
+operator application. Any type providing those — including types not anticipated when the
+solver was written, such as a matrix-free operator or a block vector distributed across
+ranks — is admissible, and the correctness argument transfers unchanged.
+
+## Formal formulation
+
+Requirements form a lattice ordered by implication. Writing $C_1 \Rightarrow C_2$ for
+"every type satisfying $C_1$ satisfies $C_2$", the standard iterator hierarchy is a chain in
+this order:
+
+$$
+\mathrm{Contiguous} \Rightarrow \mathrm{RandomAccess} \Rightarrow \mathrm{Bidirectional}
+\Rightarrow \mathrm{Forward} \Rightarrow \mathrm{Input}.
+$$
+
+For an algorithm $f$ let $\mathcal{D}(f)$ be the set of types on which it is correct. Lifting
+seeks the weakest $C$ with
+
+$$
+C \Rightarrow \text{(correctness of } f), \qquad \text{i.e. } \mathcal{C} \subseteq \mathcal{D}(f),
+$$
+
+and among such $C$ the one whose type set is largest. Weakening past that point breaks
+correctness; strengthening past it excludes types unnecessarily.
+
+Complexity participates in the same order. `std::advance` is correct for input iterators and
+$O(n)$; for random-access iterators it is $O(1)$. The algorithm therefore does not have one
+cost but a function from the requirement level to a cost, and a well-designed hierarchy is
+one whose levels are exactly the points where such costs change.
+
+## C++ representation
+
+Requirements are named as concepts, and algorithms are constrained by them:
+
+```cpp
+#include <concepts>
+#include <iterator>
+#include <ranges>
+
+namespace hpc {
+
+template <class V>
+concept InnerProductSpace =
+    std::ranges::random_access_range<V> &&
+    std::floating_point<std::ranges::range_value_t<V>>;
+
+// Correct for any random-access range of floating-point values; the
+// correctness argument uses nothing else.
+template <InnerProductSpace V>
+constexpr auto inner_product(const V& x, const V& y)
+    -> std::ranges::range_value_t<V>
+{
+    using scalar = std::ranges::range_value_t<V>;
+    scalar acc{};
+    const auto n = std::ranges::size(x);
+    for (std::size_t i = 0; i < n; ++i) {
+        acc += x[i] * y[i];
+    }
+    return acc;
+}
+
+}  // namespace hpc
+```
+
+Where the cost of an operation differs by requirement level, the algorithm dispatches on the
+level rather than on the type:
+
+```cpp
+#include <iterator>
+
+namespace hpc {
+
+template <std::input_iterator I>
+constexpr auto distance_to_end(I first, std::sentinel_for<I> auto last)
+    -> std::iter_difference_t<I>
+{
+    if constexpr (std::sized_sentinel_for<decltype(last), I>) {
+        return last - first;                    // Θ(1)
+    } else {
+        std::iter_difference_t<I> n{};
+        for (; first != last; ++first) { ++n; }  // Θ(n)
+        return n;
+    }
+}
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Lifting proceeds in a fixed order, and departures from it produce interfaces that fit one
+caller.
+
+First, write the concrete algorithm and establish that it is correct. Second, identify every
+operation the correctness argument actually uses, distinguishing operations the argument
+needs from operations the implementation happens to have used. Third, name that set. Fourth,
+check the name against at least two substantially different models — a `std::vector<double>`
+and a matrix-free operator, say, not two containers of scalars. Fifth, verify that the
+concrete case still generates the code it did before the lift.
+
+The fourth step is the discriminating one. A concept with a single model is a type with
+extra syntax. The concept `InnerProductSpace` above is defensible only because a strided
+view, an `mdspan` row, and a plain `vector` all satisfy it, and the algorithm is written so
+that each is handled by the same code without a dispatch.
+
+The fifth is where the discipline earns the label *efficient*. A lift that introduces an
+indirection, a bounds check, or an allocation in the concrete case has traded the property
+that made compile-time parameterisation worth using.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'inner_product, contiguous range', time: 'Θ(n)', space: 'Θ(1)', note: '2n flops, 2n·sizeof(T) bytes read'},
+    {operation: 'advance, random-access iterator', time: 'Θ(1)', space: 'Θ(1)', note: 'Pointer arithmetic'},
+    {operation: 'advance, forward iterator', time: 'Θ(n)', space: 'Θ(1)', note: 'Traversal'},
+    {operation: 'sort, random-access', time: 'Θ(n log n)', space: 'Θ(log n)', note: 'Introsort; comparisons'},
+    {operation: 'sort, forward-only sequence', time: 'Θ(n log n)', space: 'Θ(n) or list splicing', note: 'Not provided by std::sort'},
+  ]}
+  unit="arithmetic and comparison model"
+/>
+
+The table is the practical content of the requirement hierarchy: a level exists where a cost
+changes.
+
+## Performance considerations
+
+Generic code is not slower than concrete code when the parameterisation is resolved during
+translation, and this is verifiable rather than a matter of belief: compile the concrete
+instantiation and the hand-written version and compare the generated instructions. Where
+they differ, the cause is usually one of three things — an unerased indirection, an aliasing
+assumption the compiler could not discharge, or an interface that forces a copy.
+
+Element access through a generic interface must reduce to the same addressing arithmetic as
+direct indexing. `operator[]` on a contiguous view compiles to a load; on a lazily composed
+view it may compile to a chain of transformations that the optimiser must flatten, and for
+deeply composed adaptors it sometimes does not.
+
+The arithmetic in the loop above is sequentially dependent through `acc`, so it runs at the
+latency of the addition rather than its throughput. The fix — multiple accumulators — is not
+a property of genericity; it is discussed in [Vectorization](/docs/high-performance/vectorization)
+and applies equally to the concrete code.
+
+## Limitations
+
+Concepts constrain syntax and not semantics. `InnerProductSpace` as written admits any
+random-access range of floating-point values, including one whose `operator[]` recomputes
+its element on each access at cost $\Theta(n)$; the concept has no vocabulary for that, and
+the complexity claim above silently assumes it away. See
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements).
+
+Over-generalisation is a real failure mode. Requirements that exist to accommodate a
+hypothetical model complicate the interface, weaken what the implementation may assume, and
+in numerical code frequently prevent vectorization.
+
+Compile time and code size scale with the number of instantiations, so a library that lifts
+everything pays in build time what it saved in duplication.
+
+## Related entries
+
+[Concepts](/docs/modern-cpp/concepts) gives the mechanism;
+[Concepts as Predicates](/docs/formal-cpp/concepts-as-predicates) the formal reading;
+[Algebra](/docs/mathematics/algebra) supplies the structures that most requirement sets in
+this reference are drawn from.
+
+## References
+
+- A. Stepanov and P. McJones, *Elements of Programming*, Addison-Wesley, 2009.
+- A. Stepanov and D. Rose, *From Mathematics to Generic Programming*, Addison-Wesley, 2014.
+- D. Musser and A. Stepanov, *Generic Programming*, ISSAC 1988.

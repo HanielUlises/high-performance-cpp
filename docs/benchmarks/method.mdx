@@ -1,0 +1,203 @@
+---
+title: Method
+sidebar_label: Method
+sidebar_position: 1
+description: Timing protocol, statistics, reporting requirements, and the harness used for every measurement in this reference.
+---
+
+# Method
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'std::chrono::steady_clock for timing; std::jthread for controlled thread counts.'},
+    {std: 'C++23', note: 'std::print and std::format for machine-readable output without stream state.', paper: 'P2093R14'},
+    {std: 'C++26', note: 'No change to the timing facilities; std::simd affects what is measured, not how.'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="A measurement">
+A measurement is a tuple: a kernel identified by source revision, a machine, a compiler and its
+exact flags, an input size and shape, a timing procedure, a statistic, and a dispersion. A number
+missing any component is not a measurement.
+</Definition>
+
+## Protocol
+
+The timing loop is:
+
+1. Allocate and first-touch all data with the same decomposition the kernel will use.
+2. Run the kernel enough times to fill caches to their steady state — warm-up, discarded.
+3. Time $R$ repetitions individually, not in aggregate, so dispersion is available.
+4. Report the statistic appropriate to the kernel's regime, with the dispersion.
+5. Re-run the whole procedure in a second process, and reject the result if the two disagree by
+   more than the reported dispersion.
+
+The statistic is the **minimum** for kernels intended to be compute-bound, since interference can
+only add time and the minimum is the closest available estimate of the interference-free cost;
+and the **median with interquartile range** for anything involving allocation, I/O, contention or
+a scheduler. Which is used is stated in every table.
+
+The repetition count is chosen so that each timed region exceeds one millisecond, or the clock's
+resolution dominates. For kernels faster than that, the region contains a repeat loop and the
+count is reported, with a data dependency inserted so the loop cannot be hoisted.
+
+## Reporting
+
+Every result carries:
+
+| Item | Detail required |
+| --- | --- |
+| CPU | Model, core count, base and sustained clock, vector ISA |
+| Cache | Size and associativity per level, line size, private or shared |
+| Memory | Capacity, channels, and the measured stream bandwidth |
+| NUMA | Node count, and the placement policy used |
+| Compiler | Vendor and exact version |
+| Flags | The complete command line |
+| Threads | Count, affinity policy, and how it was set |
+| Frequency | Fixed, or the sustained frequency observed during the run |
+| Input | Size, shape, alignment, and the data's numerical character |
+| Timing | Clock, repetitions, warm-up, statistic, dispersion |
+
+Frequency behaviour is reported because it is not incidental: sustained wide-vector execution
+reduces clock on several implementations, so a kernel can be faster per cycle and slower per
+second.
+
+## Harness
+
+```cpp
+#include <algorithm>
+#include <chrono>
+#include <cstddef>
+#include <span>
+#include <vector>
+
+namespace hpc::bench {
+
+struct timing {
+    double minimum_seconds;
+    double median_seconds;
+    double interquartile_range;
+    std::size_t repetitions;
+};
+
+// Prevents the optimiser from removing a computation whose result is unused,
+// without inserting instructions of its own.
+template <class T>
+inline void keep(T&& value) noexcept {
+    asm volatile("" : : "r,m"(value) : "memory");
+}
+
+inline void clobber_memory() noexcept {
+    asm volatile("" : : : "memory");
+}
+
+// Times `kernel` R times after `warmup` untimed runs. The kernel must
+// consume its inputs and produce a value passed to keep(), or it may be
+// eliminated entirely.
+template <class Kernel>
+timing measure(Kernel&& kernel, std::size_t repetitions, std::size_t warmup) {
+    using clock = std::chrono::steady_clock;
+
+    for (std::size_t i = 0; i < warmup; ++i) { kernel(); }
+
+    std::vector<double> samples;
+    samples.reserve(repetitions);
+
+    for (std::size_t i = 0; i < repetitions; ++i) {
+        clobber_memory();
+        const auto start = clock::now();
+        kernel();
+        const auto stop = clock::now();
+        clobber_memory();
+        samples.push_back(std::chrono::duration<double>{stop - start}.count());
+    }
+
+    std::ranges::sort(samples);
+    const std::size_t n = samples.size();
+    return timing{
+        .minimum_seconds = samples.front(),
+        .median_seconds = samples[n / 2],
+        .interquartile_range = samples[(3 * n) / 4] - samples[n / 4],
+        .repetitions = repetitions,
+    };
+}
+
+}  // namespace hpc::bench
+```
+
+The `keep` and `clobber_memory` helpers are the standard defence against a compiler deleting the
+measured computation. A benchmark reporting an implausible rate has usually had its kernel
+optimised away, and the first check on any surprising result is to inspect the generated
+assembly.
+
+## Derived quantities
+
+From a timing and the kernel's cost model:
+
+```cpp
+#include <cstddef>
+
+namespace hpc::bench {
+
+struct rates {
+    double flops_per_second;
+    double bytes_per_second;
+    double arithmetic_intensity;
+    double fraction_of_roofline;
+};
+
+// flops and bytes are computed from the kernel's cost model, not measured.
+// peak and bandwidth come from the machine characterisation.
+constexpr rates derive(double seconds, double flops, double bytes,
+                       double peak_flops, double peak_bandwidth) noexcept
+{
+    const double f = flops / seconds;
+    const double b = bytes / seconds;
+    const double intensity = flops / bytes;
+    const double bound = peak_bandwidth * intensity < peak_flops
+                             ? peak_bandwidth * intensity
+                             : peak_flops;
+    return {f, b, intensity, f / bound};
+}
+
+}  // namespace hpc::bench
+```
+
+`fraction_of_roofline` is the number that matters. A kernel at 0.9 is finished; a kernel at 0.2
+has an unexplained bottleneck, and the next step is to find it rather than to tune further.
+
+## Common errors
+
+The kernel is eliminated. Detected by an implausibly high rate and confirmed in the assembly.
+
+The data is in cache when it should not be, or is cold when it should be warm. Both are fixed by
+stating and controlling the intended residency, and by sweeping sizes across the cache
+boundaries so that the transitions appear.
+
+First touch is serial while the kernel is parallel, placing all pages on one NUMA node. Detected
+by a scaling curve that flattens far below the bandwidth limit.
+
+Frequency scaling differs between the baseline and the variant. Detected by reporting the
+sustained frequency for both.
+
+The baseline is not a fair one. A speed-up against an unvectorized, unblocked, single-threaded
+implementation says nothing; the baseline must be the best available alternative.
+
+The measurement is a single point. A curve over size and thread count is what shows the regime,
+the cache transitions, and the saturation point.
+
+## Related entries
+
+[Machine Model](/docs/benchmarks/machine-model) for characterising the target;
+[Results](/docs/benchmarks/results) for the recorded runs;
+[Computational Complexity](/docs/high-performance/computational-complexity) for the models the
+predictions come from; [Conventions](/docs/conventions) for the reporting rules.
+
+## References
+
+- A. Fog, *Optimizing Software in C++*, on measurement pitfalls.
+- T. Hoefler and R. Belli, *Scientific Benchmarking of Parallel Computing Systems*, SC15.
+- J. McCalpin, *STREAM*, 1995.
+- Google Benchmark documentation, on optimiser barriers.

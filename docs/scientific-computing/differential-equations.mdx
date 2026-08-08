@@ -1,0 +1,267 @@
+---
+title: Differential Equations
+sidebar_label: Differential Equations
+sidebar_position: 4
+description: Initial-value problems, order and stability, stiffness, step control, and structure-preserving integration.
+---
+
+# Differential Equations
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts state the requirements on a right-hand side and on the state type; ranges express stage loops.'},
+    {std: 'C++23', note: 'std::mdspan describes systems of states; std::expected reports step failures without exceptions.', paper: 'P0323R12'},
+    {std: 'C++26', note: 'std::simd supports integrating many independent trajectories in lockstep.', paper: 'P1928R15'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Initial-value problem">
+Given $f : \mathbb{R} \times \mathbb{R}^n \to \mathbb{R}^n$ and $y_0 \in \mathbb{R}^n$, find
+$y$ with
+$$
+y'(t) = f(t, y(t)), \qquad y(t_0) = y_0.
+$$
+A solution exists and is unique on a neighbourhood when $f$ is continuous in $t$ and Lipschitz
+in $y$ (Picard–Lindelöf).
+</Definition>
+
+<Definition title="Order and stability">
+A one-step method $y_{n+1} = y_n + h\,\Phi(t_n, y_n, h)$ has *order* $p$ when its local
+truncation error is $O(h^{p+1})$, hence global error $O(h^p)$. It is *$A$-stable* when its
+stability region contains the entire left half-plane, so that applying it to $y' = \lambda y$
+with $\mathrm{Re}\,\lambda < 0$ yields a decaying numerical solution for every step size.
+</Definition>
+
+## Motivation
+
+Evolution equations are the standard model for physical systems, and the computational question
+is the trade between step size, order and cost per step. Three regimes exist and require
+different methods.
+
+Non-stiff problems, where the step size is limited by accuracy: explicit Runge–Kutta methods
+with embedded error estimates are optimal, and the cost is a few function evaluations per step.
+
+Stiff problems, where the step size is limited by stability rather than accuracy: explicit
+methods require steps proportional to the fastest timescale even when that component has
+decayed, and implicit methods, which cost a nonlinear solve per step, are cheaper overall by
+orders of magnitude.
+
+Structured problems — Hamiltonian systems, systems with conserved quantities — where the
+qualitative behaviour over long times matters more than the pointwise error: symplectic and
+other structure-preserving integrators keep the invariants bounded where general-purpose
+methods drift.
+
+## Formal formulation
+
+An explicit Runge–Kutta method with $s$ stages is
+
+$$
+k_i = f\Big(t_n + c_i h,\; y_n + h\sum_{j<i} a_{ij} k_j\Big), \qquad
+y_{n+1} = y_n + h \sum_{i=1}^{s} b_i k_i,
+$$
+
+with the coefficients arranged in a Butcher tableau. Order conditions are algebraic identities
+on the coefficients; order $p$ requires $\sum b_i = 1$, $\sum b_i c_i = 1/2$, and increasingly
+many conditions thereafter, which is why explicit methods of order $p$ need $s > p$ stages for
+$p \ge 5$.
+
+Stability is characterised by applying the method to $y' = \lambda y$, giving
+$y_{n+1} = R(h\lambda) y_n$ with $R$ the stability function. The stability region is
+$\{z : |R(z)| \le 1\}$. For explicit methods it is bounded, so
+
+$$
+h \le \frac{C}{|\lambda_{\max}|},
+$$
+
+and for a system with eigenvalues spanning many orders of magnitude — the definition of
+stiffness — this is dictated by the fastest mode regardless of accuracy requirements.
+
+<Theorem title="Dahlquist barriers">
+An $A$-stable linear multistep method has order at most 2, and the second-order $A$-stable
+method with the smallest error constant is the trapezoidal rule. No explicit linear multistep
+method is $A$-stable.
+</Theorem>
+
+The barrier is why stiff solvers are implicit and why BDF methods, which are $A(\alpha)$-stable
+rather than $A$-stable, are used up to order 5 in practice.
+
+Step-size control uses an embedded pair of orders $p$ and $p+1$ with local error estimate
+$e_n = \lVert y_{n+1}^{(p+1)} - y_{n+1}^{(p)} \rVert$ and the standard controller
+
+$$
+h_{\text{new}} = h\, \min\left(\alpha_{\max}, \max\left(\alpha_{\min},
+\; \beta \left(\frac{\mathrm{tol}}{e_n}\right)^{1/(p+1)}\right)\right),
+$$
+
+with safety factor $\beta \approx 0.9$ and growth limits typically $[0.2, 5]$.
+
+## C++ representation
+
+The requirements on a system, stated so that a solver commits to nothing about representation:
+
+```cpp
+#include <concepts>
+#include <span>
+
+namespace hpc {
+
+// Requires: f is Lipschitz in y on the region of integration.
+template <class System>
+concept OdeSystem = requires(const System& sys, double t,
+                             std::span<const double> y, std::span<double> dy) {
+    { sys.dimension() } -> std::convertible_to<std::size_t>;
+    sys.evaluate(t, y, dy);          // dy ← f(t, y)
+};
+
+// A stiff solver additionally needs the Jacobian action.
+template <class System>
+concept StiffOdeSystem = OdeSystem<System> &&
+    requires(const System& sys, double t, std::span<const double> y,
+             std::span<const double> v, std::span<double> jv) {
+        sys.jacobian_vector(t, y, v, jv);   // jv ← ∂f/∂y · v
+    };
+
+}  // namespace hpc
+```
+
+An embedded explicit pair, with the tableau as data and the workspace supplied:
+
+```cpp
+#include <cmath>
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+struct step_result {
+    double accepted_step;
+    double next_step;
+    double error_estimate;
+    bool accepted;
+};
+
+// Dormand–Prince 5(4): seven stages, the last reusable as the first of the
+// next step, so six evaluations per accepted step.
+template <OdeSystem System>
+step_result dopri45_step(const System& sys, double t, std::span<double> y,
+                         double h, double absolute_tolerance,
+                         double relative_tolerance, std::span<double> workspace);
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Tolerances are mixed relative and absolute, componentwise:
+
+$$
+\mathrm{sc}_i = \mathrm{atol}_i + \mathrm{rtol}_i \cdot \max(|y_{n,i}|, |y_{n+1,i}|),
+\qquad
+e_n = \sqrt{\frac{1}{n}\sum_i \left(\frac{\hat{e}_i}{\mathrm{sc}_i}\right)^2}.
+$$
+
+The componentwise scaling is essential for systems whose components differ in magnitude by
+orders of magnitude, which is the common case in chemical kinetics and multiphysics.
+
+Rejected steps are retried with the reduced size rather than accepted with a warning. A solver
+that accepts a step failing its own error test has no meaningful tolerance.
+
+Dense output — a continuous interpolant of the solution within a step — is provided by
+methods with an interpolation polynomial of matching order, and is what allows event detection
+and output at prescribed times without restricting the step size.
+
+For stiff systems the implicit stage equations are solved by a modified Newton iteration that
+reuses the Jacobian across steps, since forming and factorizing it dominates the cost:
+
+```cpp
+namespace hpc {
+
+// The Jacobian is refactorized only when the Newton iteration converges
+// slowly or the step size changes substantially; this is the difference
+// between Θ(n³) per step and Θ(n³) per several steps.
+struct newton_policy {
+    double factorization_reuse_threshold = 0.001;
+    std::size_t max_iterations = 7;
+};
+
+}  // namespace hpc
+```
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Explicit RK4 step', time: '4 evaluations', space: 'Θ(n)', note: 'Order 4, bounded stability region'},
+    {operation: 'Dormand–Prince 5(4) step', time: '6 evaluations', space: 'Θ(n)', note: 'Order 5 with embedded estimate'},
+    {operation: 'Explicit method, stiff system', time: 'Θ(T·|λ_max|) steps', space: 'Θ(n)', note: 'Stability-limited'},
+    {operation: 'Implicit BDF step', time: 'Θ(n³) or Θ(nnz) per Newton', space: 'Θ(n²) or Θ(nnz)', note: 'Jacobian reused across steps'},
+    {operation: 'Implicit method, stiff system', time: 'Θ(T/h_accuracy) steps', space: 'Θ(n²)', note: 'Accuracy-limited'},
+    {operation: 'Symplectic Störmer–Verlet step', time: '1–2 evaluations', space: 'Θ(n)', note: 'Order 2; bounded energy error'},
+  ]}
+  unit="per step; n = system dimension"
+/>
+
+The third and fifth rows are the case for implicit methods: for a system with $|\lambda_{\max}|
+= 10^6$ integrated to $T = 1$ with an accuracy permitting $h = 10^{-2}$, the explicit method
+takes $10^6$ steps and the implicit one takes $10^2$, each perhaps a hundred times more
+expensive — a net factor of a hundred.
+
+## Performance considerations
+
+Cost per step is dominated by the right-hand side for non-stiff problems and by the linear
+algebra for stiff ones. The optimisation targets differ accordingly: vectorizing the right-hand
+side in the first case, and reusing factorizations and exploiting sparsity in the second.
+
+Integrating many independent trajectories — parameter sweeps, ensemble simulations, Monte Carlo
+over initial conditions — is embarrassingly parallel and vectorizes across trajectories. This
+requires a structure-of-arrays state layout, and it fails if each trajectory takes its own
+adaptive steps; the standard resolution is fixed steps within a vector batch, or grouping
+trajectories with similar step histories.
+
+The stage vectors of a Runge–Kutta method are $\Theta(sn)$ of workspace, allocated once for the
+integration rather than per step. For large $n$ this working set determines whether the state
+stays in cache between stages, which is worth more than any arithmetic saving.
+
+Störmer–Verlet and other symplectic methods are cheap per step and low order; their case is not
+accuracy per step but the absence of secular drift in conserved quantities over $10^6$ steps,
+where a higher-order non-symplectic method drifts linearly in energy.
+
+## Limitations
+
+Adaptive step control is heuristic and can fail: near a discontinuity in $f$ or its
+derivatives, the error estimate is invalid and the controller either takes tiny steps or
+accepts inaccurate ones. Discontinuities are handled by event detection and restarting, not by
+the controller.
+
+Stiffness is not detectable in advance in general. Solvers that switch between explicit and
+implicit methods on a stiffness estimate exist and are the practical answer, at the cost of a
+more complex failure mode.
+
+Error control bounds the *local* error; the global error is the accumulation of local errors
+amplified by the problem's own sensitivity, which for a chaotic system grows exponentially.
+Tolerances therefore do not translate into accuracy of a long trajectory, and for such systems
+only statistical properties are meaningful.
+
+Implicit methods require a nonlinear solve whose convergence is not guaranteed; a failed Newton
+iteration forces a step reduction, and a solver that does not detect this produces silent
+garbage.
+
+## Related entries
+
+[Analysis](/docs/mathematics/analysis) for the convergence framework;
+[Partial Differential Equations](/docs/scientific-computing/pdes) for the semi-discretised
+case; [Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra) for the
+implicit solves; [Automatic Differentiation](/docs/scientific-computing/automatic-differentiation)
+for exact Jacobians.
+
+## References
+
+- E. Hairer, S. Nørsett and G. Wanner, *Solving Ordinary Differential Equations I: Nonstiff
+  Problems*, 2nd ed., Springer, 1993.
+- E. Hairer and G. Wanner, *Solving Ordinary Differential Equations II: Stiff and
+  Differential-Algebraic Problems*, 2nd ed., Springer, 1996.
+- E. Hairer, C. Lubich and G. Wanner, *Geometric Numerical Integration*, 2nd ed., Springer,
+  2006.
+- G. Dahlquist, *A Special Stability Problem for Linear Multistep Methods*, BIT 3, 1963.

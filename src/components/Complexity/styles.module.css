@@ -1,0 +1,69 @@
+.figure {
+  margin: 1.75rem 0 2rem;
+}
+
+.caption {
+  font-family: var(--hpc-sans);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--hpc-ink-faint);
+  margin-bottom: 0.55rem;
+}
+
+.unit {
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: none;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--hpc-sans);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.table thead {
+  border-top: 1px solid var(--hpc-ink);
+  border-bottom: 1px solid var(--hpc-ink);
+}
+
+.table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.32rem 1rem 0.36rem 0;
+}
+
+.table td {
+  padding: 0.4rem 1rem 0.4rem 0;
+  border-bottom: 1px solid var(--hpc-rule-hair);
+  color: var(--hpc-ink-muted);
+  vertical-align: baseline;
+}
+
+.table tbody th {
+  padding: 0.4rem 1rem 0.4rem 0;
+  border-bottom: 1px solid var(--hpc-rule-hair);
+  font-weight: 400;
+  color: var(--hpc-ink);
+  vertical-align: baseline;
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 1px solid var(--hpc-rule);
+}
+
+.operation code {
+  font-size: 0.95em;
+}
+
+.cost {
+  font-family: var(--hpc-mono);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  color: var(--hpc-ink) !important;
+}

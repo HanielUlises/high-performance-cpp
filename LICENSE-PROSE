@@ -1,0 +1,44 @@
+Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+Copyright (c) 2026 Haniel Ulises
+
+The prose of this repository — the text of the documentation entries under
+docs/, the essays under essays/, and the pages under src/pages/ — is licensed
+under the Creative Commons Attribution 4.0 International License.
+
+You are free to:
+
+  Share  — copy and redistribute the material in any medium or format.
+  Adapt  — remix, transform, and build upon the material for any purpose,
+           including commercially.
+
+Under the following terms:
+
+  Attribution — You must give appropriate credit, provide a link to the
+  licence, and indicate if changes were made. You may do so in any reasonable
+  manner, but not in any way that suggests the licensor endorses you or your
+  use.
+
+  No additional restrictions — You may not apply legal terms or technological
+  measures that legally restrict others from doing anything the licence
+  permits.
+
+The full legal text is at:
+
+  https://creativecommons.org/licenses/by/4.0/legalcode
+
+A human-readable summary is at:
+
+  https://creativecommons.org/licenses/by/4.0/
+
+Suggested attribution:
+
+  "High Performance C++" by Haniel Ulises, licensed under CC BY 4.0.
+  https://github.com/HanielUlises/high-performance-cpp
+
+Code in this repository, including the C++ examples embedded in the prose, is
+licensed separately under the MIT License. See LICENSE.
+
+Quotations, equations and results attributed to the cited literature remain the
+property of their respective authors and are reproduced here under fair
+dealing / fair use for the purpose of technical commentary.

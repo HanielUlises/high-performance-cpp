@@ -1,0 +1,240 @@
+---
+title: Memory
+sidebar_label: Memory
+sidebar_position: 2
+description: The memory hierarchy, latency and bandwidth, address translation, NUMA, and the allocation decisions that follow.
+---
+
+# Memory
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Over-aligned new, std::assume_aligned, std::pmr resources, and std::atomic_ref for in-place atomics.'},
+    {std: 'C++23', note: 'std::start_lifetime_as clarifies reinterpreting storage; allocators remain the placement mechanism.', paper: 'P2590R2'},
+    {std: 'C++26', note: 'std::inplace_vector gives bounded storage without dynamic allocation; std::hive for stable-address bulk storage.', paper: 'P0843R14'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="The hierarchy">
+Storage is organised as levels of increasing capacity and access cost. Each level caches the
+one below it in units of a fixed line size $B$, and holds $M_i$ bytes with latency $L_i$ and
+bandwidth $B_i$ satisfying $M_1 < M_2 < \cdots$ and $L_1 < L_2 < \cdots$.
+</Definition>
+
+Representative figures for a current server core, for orientation only; the values for a
+machine used in a measurement are reported with that measurement.
+
+| Level | Capacity | Latency | Bandwidth |
+| --- | --- | --- | --- |
+| Register | ~1 KB | 0 cycles | — |
+| L1 data | 32–48 KB per core | 4–5 cycles | ~200 GB/s per core |
+| L2 | 0.5–2 MB per core | 12–20 cycles | ~100 GB/s per core |
+| L3 | 16–256 MB shared | 40–80 cycles | ~50 GB/s per socket |
+| DRAM | 10²–10³ GB | 200–400 cycles | 20–200 GB/s per socket |
+| Remote NUMA node | — | 1.5–2× local | 0.5–0.7× local |
+
+## Motivation
+
+A core capable of 32 double-precision operations per cycle and stalled 300 cycles for a
+cache miss can execute nearly ten thousand operations in the time it takes to fetch one
+value. Any code that does not amortise fetches over substantial arithmetic runs at a small
+fraction of the machine's capability, and the ratio has widened monotonically for thirty
+years.
+
+The hierarchy is transparent in the sense that no program need mention it, and decisive in
+the sense that almost all performance differences between correct implementations of the same
+algorithm are explained by it.
+
+## Formal formulation
+
+The effective access time over a hierarchy with hit rates $h_i$ at level $i$ is
+
+$$
+\bar{L} = L_1 + (1 - h_1)\big(L_2 + (1-h_2)(L_3 + (1-h_3) L_{\mathrm{DRAM}})\big),
+$$
+
+which for typical hit rates is dominated by the last term: a 2 percent miss rate to DRAM at
+300 cycles contributes 6 cycles against L1's 4, so a kernel with 98 percent L1 hits already
+spends more than half its access time in main memory.
+
+Little's law relates the three quantities that determine achievable bandwidth:
+
+$$
+\text{concurrency} = \text{bandwidth} \times \text{latency}.
+$$
+
+At 100 GB/s and 100 ns, sustaining peak bandwidth requires $10^4$ bytes in flight — about 160
+cache lines. A single core supports on the order of 10–16 outstanding misses, which is why one
+core cannot saturate a socket's memory bandwidth and why bandwidth-bound kernels must be run
+on many cores to reach the roofline.
+
+Address translation adds a second hierarchy. With 4 KB pages and a TLB of $E$ entries, only
+$4E$ KB is addressable without a page-table walk; for $E = 1536$ that is 6 MB, so a random
+access pattern over a 1 GB array incurs a TLB miss on nearly every access, costing tens of
+cycles beyond the data miss. Huge pages of 2 MB raise the reach to 3 GB and remove the effect.
+
+## C++ representation
+
+Alignment and placement stated in the type system where possible, and in the allocator
+otherwise:
+
+```cpp
+#include <cstddef>
+#include <memory>
+#include <new>
+#include <span>
+
+namespace hpc {
+
+inline constexpr std::size_t cache_line_size = 64;
+inline constexpr std::size_t vector_alignment = 64;
+
+// Aligned allocation via the standard over-aligned operator new.
+template <class T>
+T* allocate_aligned(std::size_t n) {
+    return static_cast<T*>(
+        ::operator new[](n * sizeof(T), std::align_val_t{vector_alignment}));
+}
+
+template <class T>
+void deallocate_aligned(T* p) noexcept {
+    ::operator delete[](p, std::align_val_t{vector_alignment});
+}
+
+// Communicating alignment to the optimiser at the point of use.
+inline double dot(std::span<const double> x, std::span<const double> y) noexcept {
+    const double* px = std::assume_aligned<vector_alignment>(x.data());
+    const double* py = std::assume_aligned<vector_alignment>(y.data());
+    double acc = 0.0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        acc += px[i] * py[i];
+    }
+    return acc;
+}
+
+}  // namespace hpc
+```
+
+`std::assume_aligned` is a promise, not a check: violating it is undefined behaviour, and the
+promise is only made where the allocation path guarantees it.
+
+Avoiding false sharing, which is a memory-system effect with no visibility in the source:
+
+```cpp
+#include <atomic>
+#include <cstdint>
+#include <new>
+
+namespace hpc {
+
+#ifdef __cpp_lib_hardware_interference_size
+inline constexpr std::size_t destructive_interference =
+    std::hardware_destructive_interference_size;
+#else
+inline constexpr std::size_t destructive_interference = 64;
+#endif
+
+// Per-worker counters on distinct cache lines; without the alignment,
+// updates from different cores serialise on one line.
+struct alignas(destructive_interference) padded_counter {
+    std::atomic<std::uint64_t> value{0};
+};
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Three allocation disciplines are applied in this reference.
+
+Working buffers are allocated once and reused, not allocated per call. A kernel that
+allocates inside a loop over time steps pays the allocator, the page faults on first touch,
+and the loss of any residency the previous iteration established.
+
+Placement follows the first-touch rule on NUMA systems: a page is placed on the node of the
+thread that first writes it. Initialisation is therefore parallelised with the same
+decomposition as the computation, or the entire array lands on one node and every other node
+reads across the interconnect.
+
+```cpp
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// First-touch initialisation with the same decomposition used by the kernel,
+// so that pages are placed on the node that will read them.
+void first_touch(std::span<double> data, std::size_t workers);
+
+}  // namespace hpc
+```
+
+Huge pages are requested for arrays above a few tens of megabytes, either through the
+allocator or by relying on transparent huge pages, and the choice is recorded with the
+measurement since it changes TLB behaviour substantially.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Sequential read of n doubles', time: '8n/B_mem seconds', space: 'Θ(1)', note: 'Prefetched; achieves peak bandwidth'},
+    {operation: 'Random read of n doubles, working set ≫ L3', time: 'n · L_DRAM', space: 'Θ(1)', note: 'One line fetched per useful word'},
+    {operation: 'Strided read, stride ≥ line size', time: 'n · (line/8) × traffic', space: 'Θ(1)', note: '8× traffic amplification for stride 8'},
+    {operation: 'False-shared counter update, p cores', time: 'Θ(p) coherence transactions', space: 'Θ(1)', note: 'Line ping-pongs between cores'},
+    {operation: 'Padded counter update, p cores', time: 'Θ(1) per core', space: 'Θ(p · line)', note: 'No coherence traffic'},
+  ]}
+/>
+
+## Performance considerations
+
+Sequential access is served by hardware prefetchers that detect strides and issue ahead;
+random access is not, and the gap between the two on the same volume of data is a factor of
+ten to fifty. Converting random access to sequential — by sorting indices, by reordering the
+unknowns of a sparse system, by blocking a traversal — is usually the single largest
+available improvement.
+
+Streaming stores bypass the cache and avoid the read-for-ownership traffic that a normal
+store incurs, saving one third of the bandwidth on a pure write stream. They are correct only
+where the written data will not be read soon, and they require the write to cover whole cache
+lines.
+
+Bandwidth is a shared resource. A kernel that saturates memory bandwidth on one core gains
+nothing from additional cores and may lose to contention; conversely a compute-bound kernel
+scales until it saturates the units. Establishing which regime a kernel is in — by measuring
+against a stream benchmark on the same machine — precedes any parallelisation decision.
+
+The prefetcher does not cross page boundaries. For 4 KB pages this interrupts a stream every
+512 doubles, which is invisible for large sequential reads and significant for strided
+patterns; huge pages remove the interruption.
+
+## Limitations
+
+The C++ abstract machine has no notion of cache, so none of these effects is expressible in
+the language. Alignment, padding and interference sizes are the only handles the standard
+provides, and NUMA placement, huge pages, and prefetch control require platform interfaces.
+
+Hardware counters are needed to attribute a stall to a level of the hierarchy, and they are
+not portable. Claims about miss rates in this reference come from measurement with the
+counters named in the [Benchmarks](/docs/benchmarks) entry.
+
+`std::hardware_destructive_interference_size` is a compile-time constant and the actual line
+size is a property of the machine; a binary built for one machine and run on another may pad
+to the wrong granularity.
+
+## Related entries
+
+[Cache Locality](/docs/high-performance/cache-locality) for blocking;
+[Data Layout](/docs/high-performance/data-layout) for the arrangement of records;
+[Concurrency](/docs/high-performance/concurrency) for the coherence protocol behind false
+sharing; [Computational Complexity](/docs/high-performance/computational-complexity) for the
+external-memory model.
+
+## References
+
+- U. Drepper, *What Every Programmer Should Know About Memory*, 2007.
+- J. McCalpin, *STREAM: Sustainable Memory Bandwidth in High Performance Computers*, 1995.
+- J. Hennessy and D. Patterson, *Computer Architecture: A Quantitative Approach*, 6th ed.,
+  Morgan Kaufmann, 2017, chapter 2.
+- D. Levinthal, *Performance Analysis Guide for Intel Core Processors*, Intel, 2009.

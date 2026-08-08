@@ -1,0 +1,60 @@
+---
+title: Modern C++
+sidebar_label: Overview
+sidebar_position: 0
+description: The language as a notation for stating abstractions with their admissible domains attached.
+---
+
+# Modern C++
+
+C++ is treated in this reference as a notation in which an abstraction can be stated
+together with the domain on which it is valid, and in which a substantial part of the
+computation can be performed during translation.
+
+## The claim
+
+A generic component has two parts: an algorithm, and a description of the types on which
+that algorithm makes sense. Before C++20, only the first could be written down. The second
+lived in documentation, in the diagnostics produced when a substitution failed deep inside
+an instantiation, and in the tacit knowledge of the people maintaining the component.
+
+Concepts move the second part into the language. The consequence is not merely better
+diagnostics. It is that a generic interface becomes a mathematical statement: an algorithm
+of type
+
+$$
+\mathrm{sort} : \{\,T \in \mathcal{T} \;:\; \mathrm{RandomAccessRange}(T) \land \mathrm{StrictWeakOrder}(<_T)\,\} \to \mathrm{void}
+$$
+
+rather than a template that happens to compile for some unstated set of arguments. The
+domain is written, checked at the point of use, and available to overload resolution.
+
+The remaining chapters of this part develop that position, from the language mechanisms to
+the translation-time sublanguage that makes them useful.
+
+## Entries
+
+| Entry | Subject |
+| --- | --- |
+| [Language](/docs/modern-cpp/language) | The core model: values, objects, lifetime, initialisation, and the rules generic code relies on |
+| [Templates](/docs/modern-cpp/templates) | Parameterisation, instantiation, deduction, specialisation, and the two-phase model |
+| [Generic Programming](/docs/modern-cpp/generic-programming) | Lifting algorithms to their weakest sufficient requirements |
+| [Concepts](/docs/modern-cpp/concepts) | Named predicates over types, and what they do and do not assert |
+| [Constraints](/docs/modern-cpp/constraints) | Normalisation, subsumption, and partial ordering by constraint |
+| [Metaprogramming](/docs/modern-cpp/metaprogramming) | Computation over types, and its replacement by ordinary computation over values |
+| [Compile-Time Programming](/docs/modern-cpp/compile-time-programming) | What can be evaluated during translation, and what that buys |
+| [constexpr / consteval](/docs/modern-cpp/constexpr-consteval) | The evaluation model, its growth by revision, and immediate functions |
+| [Standard Library](/docs/modern-cpp/standard-library) | Ranges, views, algorithms and allocators as they bear on numerical work |
+
+## Revisions in this part
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts, constrained templates, requires-expressions, ranges, consteval, constinit, three-way comparison, modules.'},
+    {std: 'C++23', note: 'Deducing this, static operator(), if consteval, multidimensional subscript, a larger constexpr subset, std::mdspan.'},
+    {std: 'C++26', note: 'Static reflection, expansion statements, contracts, std::simd, senders and receivers.', paper: 'P2996, P3068, P2900, P1928, P2300'},
+  ]}
+/>
+
+Where a facility is available only from a later revision, the entry gives the portable
+formulation as well, and states what is lost by using it.

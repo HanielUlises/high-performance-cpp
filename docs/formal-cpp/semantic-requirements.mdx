@@ -1,0 +1,235 @@
+---
+title: Semantic Requirements
+sidebar_label: Semantic Requirements
+sidebar_position: 4
+description: The laws concepts cannot state, the notation used to state them anyway, and the means of discharging them.
+---
+
+# Semantic Requirements
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Standard concepts carry normative semantic requirements in prose; none is checked by the compiler.'},
+    {std: 'C++23', note: 'Unchanged; the gap between syntactic and semantic requirements remains.'},
+    {std: 'C++26', note: 'Contracts check value-level preconditions at runtime; algebraic laws over types remain unchecked.', paper: 'P2900'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Semantic requirement">
+A *semantic requirement* on a concept $C$ is a proposition about the behaviour of the operations
+required by $C$ that is not entailed by their existence. Formally, if $\mathcal{C}$ is the model
+class of $C$ and $\mathcal{S} \subseteq \mathcal{C}$ the subset satisfying the proposition, the
+requirement is the pair $(C, \mathcal{S})$, and the language enforces membership in
+$\mathcal{C}$ only.
+</Definition>
+
+An algorithm constrained by $C$ but correct only on $\mathcal{S}$ therefore has undefined
+behaviour for types in $\mathcal{C} \setminus \mathcal{S}$, and nothing diagnoses it.
+
+## Motivation
+
+The gap is not a corner case; it is where the content of a generic interface lives. Three
+examples with consequences:
+
+`std::sort` requires a strict weak ordering. Supplying a comparison that is not — a comparison
+using `<=`, or one over floating-point values including NaN — produces not a mis-sorted range
+but, in common implementations, writes outside the range, because the implementation relies on
+the ordering to bound its scan.
+
+`std::unordered_map` requires that equal keys hash equally. A hash function inconsistent with
+equality produces lookups that silently fail to find present elements.
+
+A reduction over a type modelling `Monoid` requires associativity. Applied to `double` under
+addition, which is not associative, it returns a value depending on the number of workers.
+
+None of the three is diagnosable by the type system, and all three are ordinary defects in
+production code.
+
+## Formal formulation
+
+The requirements attached to the concepts used in this reference, stated as propositions.
+
+For `Regular<T>`, with $a, b$ values of $T$:
+
+$$
+b \leftarrow a \Rightarrow b = a, \qquad
+a = b \Rightarrow f(a) = f(b) \;\;\forall f \in O_T,
+$$
+
+and equality is an equivalence relation.
+
+For `StrictWeakOrder<R, T>`, writing $a \sim b$ for $\lnot R(a,b) \land \lnot R(b,a)$:
+
+$$
+\lnot R(a,a), \qquad
+R(a,b) \land R(b,c) \Rightarrow R(a,c), \qquad
+{\sim} \text{ is transitive}.
+$$
+
+The third is the condition NaN violates, and it is the one that produces memory errors.
+
+For `Monoid<T, ⊕, e>`:
+
+$$
+(a \oplus b) \oplus c = a \oplus (b \oplus c), \qquad e \oplus a = a \oplus e = a.
+$$
+
+For `Ring<T>`, additionally distributivity and the additive-group axioms; for
+`VectorSpace<V, F>`, the four axioms of
+[Linear Algebra](/docs/mathematics/linear-algebra).
+
+For `Hashable<T>`:
+
+$$
+a = b \Rightarrow h(a) = h(b),
+$$
+
+with the converse explicitly not required.
+
+Complexity requirements are semantic in the same sense: `random_access_iterator` requires that
+`i + n` be constant time, a proposition about cost that no expression in the language can state.
+
+## C++ representation
+
+The syntactic part is a concept; the semantic part is a documented obligation with a matching
+test:
+
+```cpp
+#include <concepts>
+
+namespace hpc {
+
+// Syntactic requirements only.
+//
+// Semantic requirements (unchecked by the compiler):
+//   S1. op is associative:  op(op(a,b),c) == op(a,op(b,c))
+//   S2. identity is a two-sided identity for op
+//   S3. op is a pure function of its arguments
+//
+// A type satisfying Monoid but violating S1–S3 makes every algorithm
+// constrained by Monoid undefined.
+template <class T, class Op>
+concept Monoid =
+    std::regular<T> &&
+    std::invocable<Op, T, T> &&
+    std::same_as<std::invoke_result_t<Op, T, T>, T>;
+
+}  // namespace hpc
+```
+
+The obligations are numbered so that they can be referred to from tests and from the algorithms
+that rely on them. An algorithm's documentation then reads "requires `Monoid<T, Op>` including
+S1", which distinguishes the algorithms depending on associativity from those that do not.
+
+The corresponding property test, which is the executable form of the obligation:
+
+```cpp
+#include <random>
+#include <vector>
+
+namespace hpc::testing {
+
+// Discharges S1 probabilistically over a generator of representative values.
+template <class T, class Op, class Generator>
+bool check_associativity(Op op, Generator& gen, std::size_t trials) {
+    for (std::size_t i = 0; i < trials; ++i) {
+        const T a = gen(), b = gen(), c = gen();
+        if (!(op(op(a, b), c) == op(a, op(b, c)))) { return false; }
+    }
+    return true;
+}
+
+}  // namespace hpc::testing
+```
+
+For floating-point types the test fails, correctly, and the failure is the specification: the
+type does not satisfy S1, and the algorithms relying on it compute an approximation with the
+bounds given in [Numerical Analysis](/docs/mathematics/numerical-analysis).
+
+## Implementation
+
+Four means of discharging a semantic obligation are used, in decreasing order of strength.
+
+Encode it in the type. Where a property can be established on construction and preserved by
+every operation — normalisation of a rational, positive definiteness by construction from a
+Cholesky factor, sortedness by a wrapper type that only permits sorted construction — the
+obligation becomes an invariant and disappears from the interface.
+
+Test it as a property. Randomised property testing over a generator of representative values
+catches violations of algebraic laws with high probability and costs little. This is the default
+treatment for the laws above, and the tests live beside the concept rather than beside the
+algorithm.
+
+Check it as a precondition. Value-level properties — a matrix argument being symmetric, an index
+being in range, two spans not overlapping — are checkable at runtime, and in C++26 as contracts.
+Debug-only checking is the standard compromise where the check is $O(n)$ and the operation is
+$O(n^2)$.
+
+State and rely on it. Where none of the above applies — associativity of a user-supplied
+operation, the complexity of a user's `operator[]` — the obligation is documented as a numbered
+requirement and its violation declared undefined behaviour of the component.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Associativity property test, k trials', time: 'Θ(k · cost(op))', space: 'Θ(1)', note: 'Probabilistic; no proof'},
+    {operation: 'Symmetry check, dense n × n', time: 'Θ(n²)', space: 'Θ(1)', note: 'Debug builds only'},
+    {operation: 'Symmetry check, probabilistic', time: 'Θ(k · cost(apply))', space: 'Θ(n)', note: '⟨Ax,y⟩ ≈ ⟨x,Ay⟩ for random x, y'},
+    {operation: 'Positive-definiteness by Cholesky', time: 'Θ(n³)', space: 'Θ(n²)', note: 'Exact test; usually the factorization is wanted anyway'},
+    {operation: 'Sortedness check', time: 'Θ(n)', space: 'Θ(1)', note: 'Cheap relative to a Θ(n log n) sort'},
+    {operation: 'Overlap check on two spans', time: 'Θ(1)', space: 'Θ(1)', note: 'Pointer comparison'},
+  ]}
+/>
+
+## Performance considerations
+
+Checks that are asymptotically cheaper than the operation they guard are worth performing
+unconditionally: an $\Theta(1)$ overlap check before an $\Theta(n)$ kernel, an $\Theta(n)$
+sortedness check before an $\Theta(n \log n)$ search structure build.
+
+Checks of the same order as the operation are debug-only, and their presence or absence must not
+change behaviour — a check that is skipped in release builds must guard a precondition whose
+violation is undefined, not one the component handles.
+
+Probabilistic checks are the practical treatment for operator properties. Verifying
+$\langle Ax, y\rangle \approx \langle x, Ay\rangle$ for a few random vectors costs a few
+operator applications and detects almost every genuine asymmetry, which is far cheaper than the
+$\Theta(n^2)$ explicit test and applies to matrix-free operators where the explicit test is
+impossible.
+
+Encoding a property in a type is free at runtime and is therefore preferred wherever the
+property can be maintained as an invariant.
+
+## Limitations
+
+Property testing establishes nothing with certainty. It samples a value space, and the values
+that violate a law are frequently the extreme ones — infinities, denormals, empty ranges — which
+a naive generator produces rarely. Generators are written to include them deliberately.
+
+Some obligations are untestable in principle. Complexity requirements cannot be checked by
+observation without a timing model, and purity of a user-supplied operation cannot be checked at
+all.
+
+Encoding in the type is limited by what the type system can express. Positive definiteness,
+sortedness of a view, and non-aliasing are all expressible with wrapper types at the cost of
+interface friction, and the friction is why libraries usually choose documentation instead.
+
+Contracts in C++26 check values, not types, and their runtime cost restricts them to
+preconditions cheap relative to the guarded operation.
+
+## Related entries
+
+[Concepts as Predicates](/docs/formal-cpp/concepts-as-predicates) for the syntactic side;
+[Types as Abstractions](/docs/formal-cpp/types-as-abstractions) for invariants;
+[Correctness](/docs/formal-cpp/correctness) for the testing and verification machinery;
+[Algebra](/docs/mathematics/algebra) for the laws themselves.
+
+## References
+
+- A. Stepanov and P. McJones, *Elements of Programming*, Addison-Wesley, 2009.
+- ISO/IEC 14882, clauses stating the semantic requirements of the library concepts.
+- K. Claessen and J. Hughes, *QuickCheck: A Lightweight Tool for Random Testing*, ICFP 2000.
+- B. Meyer, *Object-Oriented Software Construction*, 2nd ed., Prentice Hall, 1997, on contracts.

@@ -1,0 +1,279 @@
+---
+title: Automatic Differentiation
+sidebar_label: Automatic Differentiation
+sidebar_position: 6
+description: Forward and reverse mode, their cost, and implementation by operator overloading over a generic numeric type.
+---
+
+# Automatic Differentiation
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts allow a kernel to be written over any type modelling a field, which is what makes overloading-based AD transparent.'},
+    {std: 'C++23', note: 'Deducing this simplifies expression-template hierarchies used by taping implementations.', paper: 'P0847R7'},
+    {std: 'C++26', note: 'Reflection permits a tape or an adjoint to be generated from the structure of a function.', paper: 'P2996'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Automatic differentiation">
+Automatic differentiation evaluates the derivative of a function specified by a program by
+applying the chain rule to each elementary operation as the program executes. It is neither
+symbolic differentiation, which manipulates expressions, nor numerical differentiation, which
+approximates by finite differences; the derivative it produces is exact up to rounding.
+</Definition>
+
+For $f = f_L \circ \cdots \circ f_1$, the Jacobian factors as
+
+$$
+J = J_L J_{L-1} \cdots J_1,
+$$
+
+and the two modes are the two association orders of this product. Forward mode computes right
+to left, propagating $J_1 v$ then $J_2(J_1 v)$; reverse mode computes left to right,
+propagating $w^{\mathsf{T}}J_L$ then $(w^{\mathsf{T}}J_L)J_{L-1}$.
+
+## Motivation
+
+Every gradient-based method in [Optimization](/docs/mathematics/optimization), every Newton
+iteration in [Analysis](/docs/mathematics/analysis), and every sensitivity analysis requires
+derivatives. The three ways of obtaining them differ sharply:
+
+| Method | Accuracy | Cost of $\nabla f$, $n$ inputs | Effort |
+| --- | --- | --- | --- |
+| Finite differences | $O(\sqrt{u})$ relative | $(n+1)$ evaluations | None |
+| Symbolic | Exact | Expression swell | Manual or CAS |
+| Automatic, forward | Exact to rounding | $n \cdot O(1)$ evaluations | Type substitution |
+| Automatic, reverse | Exact to rounding | $O(1)$ evaluations | Tape or transformation |
+
+The reverse-mode row is the one that matters: a gradient of a scalar function of $n$ variables
+costs a small constant multiple of one function evaluation, independent of $n$. For $n = 10^6$
+this is the difference between feasible and impossible.
+
+## Formal formulation
+
+Forward mode evaluates on dual numbers, $\mathbb{D} = \{a + b\varepsilon : \varepsilon^2 = 0\}$,
+with arithmetic
+
+$$
+(a + b\varepsilon)(c + d\varepsilon) = ac + (ad + bc)\varepsilon,
+$$
+
+so that evaluating $f$ at $x + \varepsilon$ yields $f(x) + f'(x)\varepsilon$ by the algebra
+alone. For $f : \mathbb{R}^n \to \mathbb{R}^m$, one forward sweep with seed $v$ produces the
+Jacobian–vector product $Jv$ at cost
+
+$$
+\mathrm{cost}(Jv) \le c_{\text{fwd}} \cdot \mathrm{cost}(f), \qquad c_{\text{fwd}} \approx 2\text{–}3,
+$$
+
+so the full Jacobian costs $n$ sweeps.
+
+Reverse mode records the computation, then propagates adjoints $\bar{v}_i = \partial y /
+\partial v_i$ backwards:
+
+$$
+\bar{v}_i = \sum_{j : i \prec j} \bar{v}_j \frac{\partial v_j}{\partial v_i}.
+$$
+
+One reverse sweep produces the vector–Jacobian product $w^{\mathsf{T}}J$ at cost
+
+$$
+\mathrm{cost}(w^{\mathsf{T}}J) \le c_{\text{rev}} \cdot \mathrm{cost}(f), \qquad c_{\text{rev}} \approx 3\text{–}5,
+$$
+
+independent of $n$. This is the *cheap gradient principle*, and it is the reason large-scale
+optimisation is possible at all.
+
+Second derivatives follow by composition: forward-over-reverse gives a Hessian–vector product
+$\nabla^2 f \cdot v$ at $O(1)$ function evaluations, which is exactly what the truncated-Newton
+methods of [Optimization](/docs/mathematics/optimization) require.
+
+## C++ representation
+
+Forward mode as a numeric type, usable by any generic kernel:
+
+```cpp
+#include <cmath>
+#include <concepts>
+
+namespace hpc {
+
+// A dual number: value plus one directional derivative.
+template <std::floating_point T>
+struct dual {
+    T value{};
+    T derivative{};
+
+    friend constexpr dual operator+(dual a, dual b) noexcept {
+        return {a.value + b.value, a.derivative + b.derivative};
+    }
+
+    friend constexpr dual operator-(dual a, dual b) noexcept {
+        return {a.value - b.value, a.derivative - b.derivative};
+    }
+
+    friend constexpr dual operator*(dual a, dual b) noexcept {
+        return {a.value * b.value, a.derivative * b.value + a.value * b.derivative};
+    }
+
+    friend constexpr dual operator/(dual a, dual b) noexcept {
+        return {a.value / b.value,
+                (a.derivative * b.value - a.value * b.derivative) / (b.value * b.value)};
+    }
+
+    friend dual sin(dual a) noexcept {
+        return {std::sin(a.value), a.derivative * std::cos(a.value)};
+    }
+
+    friend dual exp(dual a) noexcept {
+        const T e = std::exp(a.value);
+        return {e, a.derivative * e};
+    }
+
+    friend dual sqrt(dual a) noexcept {
+        const T s = std::sqrt(a.value);
+        return {s, a.derivative / (T{2} * s)};
+    }
+};
+
+// A kernel written against Field works unchanged on dual<double>.
+template <class T>
+constexpr T rosenbrock(T x, T y) noexcept {
+    const T a = T{1} - x;
+    const T b = y - x * x;
+    return a * a + T{100} * b * b;
+}
+
+}  // namespace hpc
+```
+
+The last function is the point of the entry: it was written for `double` and differentiates
+because it was written generically. Genericity, treated in
+[Generic Programming](/docs/modern-cpp/generic-programming) as an organising principle, here
+pays a concrete dividend.
+
+Reverse mode requires a record of the computation:
+
+```cpp
+#include <cstddef>
+#include <vector>
+
+namespace hpc {
+
+// A tape entry: the partials of one operation with respect to its operands.
+struct tape_entry {
+    std::size_t lhs;
+    std::size_t rhs;
+    double lhs_partial;
+    double rhs_partial;
+};
+
+class tape {
+public:
+    std::size_t record(std::size_t lhs, std::size_t rhs,
+                       double lhs_partial, double rhs_partial);
+
+    // Propagate adjoints backwards from the output; Θ(tape length).
+    void backpropagate(std::size_t output, std::vector<double>& adjoints) const;
+
+private:
+    std::vector<tape_entry> entries_;
+};
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Forward mode is implemented as a type and requires nothing else; it is the correct choice for
+$n$ small, for Jacobian–vector products, and for code that must remain allocation-free. Vector
+forward mode — carrying $k$ derivatives per value — amortises the function evaluation over $k$
+directions and vectorizes naturally.
+
+Reverse mode requires storage proportional to the number of operations executed, which for a
+long simulation is the binding constraint. Checkpointing trades recomputation for memory:
+storing the state at $\sqrt{L}$ points of an $L$-step computation and recomputing between them
+reduces storage to $O(\sqrt{L})$ at twice the operation count, and the optimal schedule for a
+given memory budget is given by the revolve algorithm.
+
+Elementary functions must be extended with their derivative rules, and the extension is where
+correctness is lost most often: `abs` at zero, `sqrt` at zero, `pow` with a non-constant
+exponent, and branches that make the function non-differentiable at the branch point. The rule
+applied here is that a non-differentiable point is reported rather than assigned an arbitrary
+subgradient.
+
+Where a routine has a known analytic derivative — a linear solve, an eigenvalue, an iterative
+fixed point — differentiating through the implementation is wasteful and often unstable. The
+correct treatment is a custom rule: for $x = A^{-1}b$, the adjoint is obtained from a solve
+with $A^{\mathsf{T}}$, at the cost of one additional solve rather than of differentiating the
+factorization.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Function evaluation', time: 'C', space: 'Θ(1)', note: 'Baseline'},
+    {operation: 'Forward mode, one direction', time: '≈ 2–3 C', space: 'Θ(1)', note: 'Jv'},
+    {operation: 'Full Jacobian, forward, n inputs', time: '≈ 2–3 nC', space: 'Θ(1)', note: 'n sweeps'},
+    {operation: 'Reverse mode, one adjoint', time: '≈ 3–5 C', space: 'Θ(operations)', note: 'wᵀJ, independent of n'},
+    {operation: 'Full Jacobian, reverse, m outputs', time: '≈ 3–5 mC', space: 'Θ(operations)', note: 'm sweeps'},
+    {operation: 'Hessian–vector, forward over reverse', time: '≈ 10 C', space: 'Θ(operations)', note: '∇²f · v'},
+    {operation: 'Finite-difference gradient', time: '(n+1) C', space: 'Θ(1)', note: 'Only √u relative accuracy'},
+    {operation: 'Reverse with √L checkpointing', time: '≈ 2 × reverse', space: 'Θ(√L)', note: 'L computational steps'},
+  ]}
+/>
+
+## Performance considerations
+
+Forward mode with $k$ directions carried simultaneously is the vectorization-friendly form: the
+$k$ derivative components occupy consecutive lanes, and the arithmetic is unit-stride. It also
+amortises the value computation across directions, so $k$ directions cost far less than $k$
+separate sweeps.
+
+Reverse mode's cost is dominated by tape memory traffic rather than by arithmetic. A tape entry
+of 32 bytes per operation means a computation performing $10^9$ operations produces 32 GB of
+tape; checkpointing is not an optimisation but a requirement at that scale.
+
+Operator-overloading implementations obstruct vectorization of the original kernel, since the
+arithmetic becomes calls on a class type. Where the kernel is performance-critical and its
+derivative is needed, a hand-written adjoint of the kernel — verified against the automatic one
+— is typically several times faster.
+
+The correctness check is cheap and should always be present: comparing an automatic derivative
+against a finite-difference approximation in a random direction detects most implementation
+errors, with agreement expected to about $\sqrt{u}$ relative accuracy.
+
+## Limitations
+
+Reverse-mode memory grows with the number of operations, and checkpointing mitigates rather
+than removes the growth.
+
+Control flow is differentiated along the path taken. A function with a data-dependent branch is
+differentiated as though the branch condition were constant, which is correct almost everywhere
+and wrong exactly at the branch point — a set of measure zero that optimisation algorithms
+nevertheless visit.
+
+Iterative solvers differentiated through their iterations produce derivatives of the
+approximation, not of the exact solution, and the derivative converges more slowly than the
+value. Custom rules based on the implicit function theorem are the correct treatment.
+
+Higher-order derivatives by nesting cost exponentially in the order, and the expression growth
+makes third and higher derivatives impractical without specialised techniques such as Taylor
+mode.
+
+## Related entries
+
+[Optimization](/docs/mathematics/optimization) and
+[Optimization](/docs/scientific-computing/optimization) for the consumers of gradients;
+[Generic Programming](/docs/modern-cpp/generic-programming) for why a generic kernel
+differentiates for free; [Numerical Analysis](/docs/mathematics/numerical-analysis) for the
+finite-difference comparison.
+
+## References
+
+- A. Griewank and A. Walther, *Evaluating Derivatives*, 2nd ed., SIAM, 2008.
+- A. Griewank and A. Walther, *Algorithm 799: Revolve*, ACM TOMS 26(1), 2000.
+- C. Bischof et al., *ADIC and ADIFOR*, on source transformation.
+- M. Blondel and V. Roulet, *The Elements of Differentiable Programming*, 2024.

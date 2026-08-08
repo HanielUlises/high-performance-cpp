@@ -1,0 +1,222 @@
+---
+title: Computational Complexity
+sidebar_label: Computational Complexity
+sidebar_position: 1
+description: Cost models, their assumptions, and the conditions under which each predicts running time.
+---
+
+# Computational Complexity
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Complexity requirements on standard algorithms are normative prose; concepts cannot express them.'},
+    {std: 'C++23', note: 'Unchanged: complexity remains outside the type system.'},
+    {std: 'C++26', note: 'Contracts can assert complexity-relevant preconditions (sortedness, size relations) but not complexity itself.', paper: 'P2900'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Cost model">
+A cost model is a pair: a set of operations counted, and a cost assigned to each. The
+complexity of an algorithm is a function from input size to total cost under that model.
+A complexity statement without its model is not a statement.
+</Definition>
+
+Four models are used in this reference.
+
+| Model | Operations counted | Predictive when |
+| --- | --- | --- |
+| RAM | Elementary operations, unit cost | Working set fits in cache; no vectorization |
+| Arithmetic | Floating-point operations only | Compute-bound numerical kernels |
+| External memory $(M,B)$ | Transfers of $B$ words between a cache of $M$ words and memory | Memory-bound kernels |
+| Work–span $(T_1, T_\infty)$ | Total work and critical-path length | Parallel algorithms |
+
+## Motivation
+
+The RAM model was designed when arithmetic and memory access cost the same. They now differ
+by a factor of several hundred, and the model correspondingly mispredicts.
+
+The standard demonstration is matrix transposition against matrix multiplication. Transposing
+an $n \times n$ matrix performs $\Theta(n^2)$ operations; multiplying two performs
+$\Theta(n^3)$. At $n = 4096$ the transposition moves $2n^2 = 3.4 \times 10^7$ words with no
+reuse and takes, on a machine with 50 GB/s of achievable bandwidth, about 5 ms. The
+multiplication performs $1.4 \times 10^{11}$ operations and takes, on the same machine at 100
+GFLOP/s, about 1.4 s. The ratio of times is 280; the ratio of operation counts is 4096. The
+RAM model is wrong by more than an order of magnitude, and the external-memory model explains
+why: the transposition is bandwidth-bound and the multiplication, when blocked, is not.
+
+## Formal formulation
+
+In the external-memory model $(M, B)$, the cost of an algorithm is the number of transfers of
+$B$-word lines between a cache of $M$ words and unbounded memory. The classical results are
+tight:
+
+$$
+\mathrm{scan}(n) = \Theta\!\left(\frac{n}{B}\right), \qquad
+\mathrm{sort}(n) = \Theta\!\left(\frac{n}{B}\log_{M/B}\frac{n}{B}\right),
+$$
+
+and for $n \times n$ matrix multiplication with $M < n^2$,
+
+$$
+Q(n) = \Theta\!\left(\frac{n^3}{B\sqrt{M}}\right),
+$$
+
+a lower bound of Hong and Kung. The $\sqrt{M}$ is the reason blocking works and the reason it
+cannot be improved: a block of size $b \times b$ fits when $3b^2 \le M$, and each block
+product performs $\Theta(b^3)$ operations on $\Theta(b^2)$ data.
+
+The work–span model gives the parallel bound. With total work $T_1$ and critical path
+$T_\infty$, a greedy scheduler on $p$ processors achieves
+
+$$
+T_p \le \frac{T_1}{p} + T_\infty,
+$$
+
+and the achievable speed-up is bounded by Amdahl's law for a fixed serial fraction $s$,
+
+$$
+S(p) = \frac{1}{s + (1-s)/p} \le \frac{1}{s},
+$$
+
+and by Gustafson's observation that $s$ typically shrinks as the problem grows, giving
+$S(p) = p - s(p-1)$ for a fixed time budget.
+
+## C++ representation
+
+Complexity is not expressible in the type system, so it is documented and asserted:
+
+```cpp
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// Complexity: Θ(n) comparisons, Θ(1) space.
+// Memory: Θ(n/B) transfers, one streaming pass, no reuse.
+// Requires: xs is sorted by <.
+constexpr bool contains_sorted(std::span<const double> xs, double value) noexcept;
+
+// Complexity: Θ(log n) comparisons, Θ(1) space.
+// Memory: Θ(log n) transfers, each a cache miss for n ≫ M — the constant
+// is far worse per comparison than the linear scan above.
+constexpr bool binary_search_sorted(std::span<const double> xs, double value) noexcept;
+
+}  // namespace hpc
+```
+
+The pair illustrates why the model must be named: binary search wins in the RAM model at
+every size, and loses to a linear scan for $n$ below a few hundred on real hardware, because
+the scan is one sequential stream that the prefetcher handles and the search is a sequence of
+dependent random accesses.
+
+Iterator categories are the standard library's mechanism for making complexity
+*visible* even though it cannot be checked:
+
+```cpp
+#include <iterator>
+
+namespace hpc {
+
+// The concept implies constant-time advance by the standard's normative
+// requirements; the compiler checks only that the syntax exists.
+template <std::random_access_iterator I>
+constexpr I advance_by(I it, std::iter_difference_t<I> n) noexcept {
+    return it + n;
+}
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Analysis in this reference reports three quantities for each kernel: the operation count under
+the arithmetic model, the transfer count under $(M, B)$, and their ratio, the arithmetic
+intensity. The third determines which of the first two is binding.
+
+For a dense $n \times n$ matrix multiplication:
+
+$$
+\text{flops} = 2n^3, \qquad
+Q = \Theta\!\left(\frac{n^3}{B\sqrt{M}}\right), \qquad
+I = \Theta(\sqrt{M}),
+$$
+
+so the intensity grows with cache size and the kernel is compute-bound once blocked. For a
+sparse matrix–vector product with $\mathrm{nnz}$ non-zeros in CSR:
+
+$$
+\text{flops} = 2\,\mathrm{nnz}, \qquad
+\text{bytes} \approx 12\,\mathrm{nnz} + 8n, \qquad
+I \approx \frac{1}{6} \text{ flop/byte},
+$$
+
+so it is bandwidth-bound at every size, and no arrangement of the arithmetic changes that.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Scan of n elements', time: 'Θ(n)', space: 'Θ(1)', note: 'Θ(n/B) transfers; prefetch-friendly'},
+    {operation: 'Binary search', time: 'Θ(log n)', space: 'Θ(1)', note: 'Θ(log(n/B)) misses; dependent latency chain'},
+    {operation: 'Comparison sort', time: 'Θ(n log n)', space: 'Θ(log n)', note: 'Θ((n/B)log_{M/B}(n/B)) transfers'},
+    {operation: 'Naive n × n matrix multiply', time: '2n³ flops', space: 'Θ(1)', note: 'Θ(n³/B) transfers; bandwidth-bound'},
+    {operation: 'Blocked n × n matrix multiply', time: '2n³ flops', space: 'Θ(b²)', note: 'Θ(n³/(B√M)) transfers; compute-bound'},
+    {operation: 'Sparse matrix–vector product', time: '2·nnz flops', space: 'Θ(n)', note: 'Intensity ≈ 1/6; bandwidth-bound'},
+  ]}
+  unit="RAM and external-memory models"
+/>
+
+## Performance considerations
+
+Constants matter at the sizes that occur. An $O(n \log n)$ algorithm with a large constant and
+poor locality loses to an $O(n^2)$ one with a streaming access pattern well past the size at
+which the asymptotics would suggest otherwise, and the crossover is measured rather than
+derived.
+
+The three-hundredfold spread between the cost of an arithmetic operation and a main-memory
+access means that a model counting only arithmetic is predictive exactly when the data is
+resident. Establishing residency — by blocking, by layout, by fusion — is what converts an
+arithmetic-model bound into a running time.
+
+Branch misprediction, at roughly 15–20 cycles, is invisible to every model above. For
+data-dependent control flow over unpredictable data it dominates: a branchless formulation
+performing more arithmetic frequently wins, which is a statement no complexity model in the
+table predicts.
+
+Parallel scaling is bounded by the serial fraction long before it is bounded by the hardware.
+A kernel that is 95 percent parallel cannot exceed a speed-up of 20 on any number of cores,
+which is why reducing the serial fraction takes precedence over optimising the parallel part.
+
+## Limitations
+
+No model here accounts for instruction-level parallelism, superscalar issue, out-of-order
+execution, or the pipelined nature of arithmetic. A dependent chain of additions runs at one
+per four cycles; independent ones at two per cycle. The factor of eight is not in any
+operation count.
+
+Cache models assume full associativity and optimal replacement. Real caches are set
+associative with a pseudo-LRU policy, and conflict misses from power-of-two strides can
+degrade a blocked kernel by a factor of several — the reason arrays are padded to break the
+stride.
+
+The models assume a fixed cost per operation, and hardware does not: denormal inputs, division
+and transcendental functions differ by more than an order of magnitude from addition.
+
+## Related entries
+
+[Memory](/docs/high-performance/memory) supplies the hierarchy the external-memory model
+abstracts; [Cache Locality](/docs/high-performance/cache-locality) develops blocking;
+[Parallelism](/docs/high-performance/parallelism) the work–span model;
+[Benchmarks](/docs/benchmarks) the measurements that calibrate all of them.
+
+## References
+
+- A. Aggarwal and J. Vitter, *The Input/Output Complexity of Sorting and Related Problems*,
+  CACM 31(9), 1988.
+- J.-W. Hong and H. T. Kung, *I/O Complexity: The Red-Blue Pebble Game*, STOC 1981.
+- M. Frigo, C. Leiserson, H. Prokop and S. Ramachandran, *Cache-Oblivious Algorithms*, FOCS
+  1999.
+- S. Williams, A. Waterman and D. Patterson, *Roofline: An Insightful Visual Performance Model*,
+  CACM 52(4), 2009.

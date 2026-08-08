@@ -1,0 +1,110 @@
+---
+title: Results
+sidebar_label: Results
+sidebar_position: 3
+description: Recorded measurements, the schema each must satisfy, and the procedure for adding one.
+---
+
+# Results
+
+## Current state
+
+**No measurements have been recorded.** The performance statements elsewhere in this reference
+are predictions from the cost models in
+[Computational Complexity](/docs/high-performance/computational-complexity) and
+[Machine Model](/docs/benchmarks/machine-model), and are labelled as such where they appear.
+
+This page holds the schema and the procedure, so that a run can be added without deciding how to
+report it.
+
+## Machines
+
+| Identifier | CPU | Cores | Peak (GFLOP/s) | Triad (GB/s) | Ridge point |
+| --- | --- | --- | --- | --- | --- |
+| *(none recorded)* | — | — | — | — | — |
+
+Each identifier expands to a full characterisation in the template given in
+[Machine Model](/docs/benchmarks/machine-model). A machine without a complete characterisation
+cannot host a result.
+
+## Kernel results
+
+The schema for one kernel on one machine:
+
+| Field | Content |
+| --- | --- |
+| Kernel | Name and source revision |
+| Machine | Identifier from the table above |
+| Compiler | Vendor, version, complete flags |
+| Sizes | The swept range, with the cache boundaries marked |
+| Threads | Count and affinity |
+| Statistic | Minimum or median, with dispersion |
+| Achieved | Rate at each size |
+| Bound | Roofline bound at each size |
+| Fraction | Achieved divided by bound |
+| Notes | Anomalies, conflict-miss signatures, frequency behaviour |
+
+### Inner product
+
+| Machine | $n$ | Threads | Achieved (GB/s) | Bound (GB/s) | Fraction |
+| --- | --- | --- | --- | --- | --- |
+| *(none recorded)* | — | — | — | — | — |
+
+Expected structure, from the model: a compute-bound plateau while both vectors are L1-resident, a
+step down at each cache boundary, and a memory-bound plateau at $I \cdot B = 0.125 B$ beyond the
+last level. See [Inner Product](/docs/examples/inner-product).
+
+### Matrix multiplication
+
+| Machine | $n$ | Variant | Threads | Achieved (GFLOP/s) | Fraction of peak |
+| --- | --- | --- | --- | --- | --- |
+| *(none recorded)* | — | — | — | — | — |
+
+Expected structure: the naive and interchanged variants flat and low, the blocked variant rising
+with $n$ toward a plateau near peak, and sharp dips at power-of-two $n$ unless the leading
+dimension is padded. See [Matrix Multiplication](/docs/examples/matrix-multiplication).
+
+### Sparse matrix–vector product
+
+| Machine | Matrix | nnz | Threads | Achieved (GB/s) | Fraction of triad |
+| --- | --- | --- | --- | --- | --- |
+| *(none recorded)* | — | — | — | — | — |
+
+Expected structure: a fraction of stream bandwidth determined by the locality of the column
+indices, improving with a bandwidth-reducing ordering. Reporting GFLOP/s against peak for this
+kernel is misleading; the fraction of achievable bandwidth is the correct metric. See
+[Sparse Computation](/docs/scientific-computing/sparse-computation).
+
+### Conjugate gradient
+
+| Machine | Problem | $n$ | Preconditioner | Iterations | Time (s) | Time per iteration |
+| --- | --- | --- | --- | --- | --- | --- |
+| *(none recorded)* | — | — | — | — | — | — |
+
+Both the iteration count and the time per iteration are required: a preconditioner is evaluated
+on their product. See [Conjugate Gradient](/docs/examples/conjugate-gradient).
+
+## Adding a result
+
+1. Characterise the machine using the probes in
+   [Machine Model](/docs/benchmarks/machine-model), and add its row above.
+2. Run the kernel under the protocol in [Method](/docs/benchmarks/method): warm-up, individual
+   repetitions, the stated statistic, and a second process to confirm.
+3. Compute the roofline bound from the kernel's cost model and the machine's parameters.
+4. Record achieved, bound and fraction across the swept sizes, not at one point.
+5. Note anything anomalous: frequency behaviour, conflict-miss signatures at power-of-two sizes,
+   scaling that saturates below the bandwidth limit.
+6. If a figure could not be reproduced within its stated dispersion across processes, record it
+   as unreproducible rather than averaging it into significance.
+
+## Why this page is empty
+
+Filling it with plausible figures would cost nothing and would be worse than useless: the numbers
+would be quoted, and there would be no machine behind them. The reference states model
+predictions as predictions and measurements as measurements, and until a run exists there are
+only the former.
+
+## Related entries
+
+[Method](/docs/benchmarks/method), [Machine Model](/docs/benchmarks/machine-model),
+[Examples](/docs/examples), [Conventions](/docs/conventions).

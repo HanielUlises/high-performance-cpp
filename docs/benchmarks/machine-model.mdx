@@ -1,0 +1,165 @@
+---
+title: Machine Model
+sidebar_label: Machine Model
+sidebar_position: 2
+description: Characterising a target machine — peak rate, achievable bandwidth, ridge point, cache and TLB reach — before any kernel is measured.
+---
+
+# Machine Model
+
+## Definition
+
+<Definition title="Machine characterisation">
+A machine characterisation is the set of parameters required to compute a roofline bound for any
+kernel on that machine: the peak floating-point rate $P_{\max}$, the achievable memory bandwidth
+$B$, the capacity and line size of each cache level, and the TLB reach. The *ridge point* is
+$I^\* = P_{\max}/B$, the arithmetic intensity above which a kernel can be compute-bound.
+</Definition>
+
+Characterisation precedes measurement. Without it, a kernel's achieved rate is a number with
+nothing to compare against.
+
+## Peak rate
+
+The theoretical peak is computed, not measured:
+
+$$
+P_{\max} = f \times c \times W \times \mathrm{IPC}_{\text{fma}} \times 2,
+$$
+
+with $f$ the sustained clock, $c$ the core count, $W$ the vector width in elements, and the final
+factor 2 accounting for a fused multiply-add counting as two operations. The sustained clock is
+used rather than the nominal one, since wide-vector execution reduces frequency on several
+implementations, and the correct value is measured under the load the kernel will impose.
+
+A microbenchmark confirms the computation: a loop of independent fused multiply-adds with enough
+accumulators to saturate the pipeline should reach within a few percent of the computed peak, and
+a large shortfall means either the frequency assumption or the width assumption is wrong.
+
+```cpp
+#include <array>
+#include <cstddef>
+
+namespace hpc::bench {
+
+// Saturates the FMA pipelines: enough independent chains that latency is
+// hidden, no memory traffic, no reduction until the end.
+template <std::size_t Accumulators = 16>
+double peak_fma_probe(std::size_t iterations) noexcept {
+    std::array<double, Accumulators> acc{};
+    for (std::size_t k = 0; k < Accumulators; ++k) {
+        acc[k] = static_cast<double>(k) * 1e-3;
+    }
+    const double a = 1.0000001;
+    const double b = 1e-9;
+
+    for (std::size_t i = 0; i < iterations; ++i) {
+        for (std::size_t k = 0; k < Accumulators; ++k) {
+            acc[k] = acc[k] * a + b;
+        }
+    }
+
+    double total = 0.0;
+    for (const double v : acc) { total += v; }
+    return total;   // returned so the loop cannot be eliminated
+}
+
+}  // namespace hpc::bench
+```
+
+The operation count is $2 \times \text{Accumulators} \times \text{iterations}$.
+
+## Achievable bandwidth
+
+Bandwidth is measured, never taken from a specification. The four stream kernels give the
+figures a real kernel can expect:
+
+| Kernel | Operation | Bytes per element | Notes |
+| --- | --- | --- | --- |
+| copy | $c_i = a_i$ | 16 (24 with read-for-ownership) | Write stream |
+| scale | $b_i = \alpha c_i$ | 16 | One multiply |
+| add | $c_i = a_i + b_i$ | 24 | Two reads, one write |
+| triad | $a_i = b_i + \alpha c_i$ | 24 | The standard reference figure |
+
+Read-for-ownership matters: a normal store first fetches the line it is about to overwrite, so a
+write stream moves 50 percent more data than the arithmetic suggests. Non-temporal stores remove
+the fetch, and whether they were used must be reported since it changes the denominator.
+
+Bandwidth is measured with arrays several times the last-level cache, with parallel first touch,
+and at several thread counts, since one core cannot saturate a socket — the Little's law
+calculation in [Memory](/docs/high-performance/memory) gives the reason.
+
+## Cache and TLB reach
+
+The cache hierarchy is determined by a pointer-chasing sweep: a randomly permuted linked list
+over a working set of increasing size, traversed with a dependent load chain so that no
+prefetching or parallelism intervenes. The latency plateaus give the capacities and the latency of
+each level directly.
+
+TLB reach is measured by the same sweep with the stride set to the page size, which isolates
+translation misses from data misses. With 4 KB pages and $E$ entries the reach is $4E$ KB; with
+2 MB pages it is $2E$ MB, and the difference determines whether a large random-access kernel
+spends its time in page-table walks.
+
+## The roofline
+
+With $P_{\max}$ and $B$ in hand, the bound for a kernel of intensity $I$ is
+
+$$
+P(I) \le \min(P_{\max},\; I \cdot B), \qquad I^\* = \frac{P_{\max}}{B}.
+$$
+
+Intensities for the kernels in this reference, computed from their cost models:
+
+| Kernel | Flops | Bytes | $I$ (flop/byte) | Regime |
+| --- | --- | --- | --- | --- |
+| axpy | $2n$ | $24n$ | $0.083$ | Memory |
+| Inner product | $2n$ | $16n$ | $0.125$ | Memory |
+| Dense matrix–vector | $2n^2$ | $8n^2$ | $0.25$ | Memory |
+| Sparse matrix–vector, CSR | $2\,\mathrm{nnz}$ | $\approx 12\,\mathrm{nnz}$ | $\approx 0.167$ | Memory |
+| 7-point stencil | $13n$ | $\approx 32n$ | $\approx 0.4$ | Memory |
+| Matrix multiply, unblocked | $2n^3$ | $\Theta(n^3)$ | $O(1)$ | Memory |
+| Matrix multiply, blocked $b$ | $2n^3$ | $\Theta(n^3/b)$ | $\approx b/12$ | Compute for $b \gtrsim 12 I^\*$ |
+
+The last two rows are the argument for blocking stated arithmetically: the same computation moves
+between regimes according to how it is organised, and the blocking factor required is determined
+by the machine's ridge point.
+
+Every intensity above is a prediction from a cost model. Measured traffic differs — cache hits
+reduce it, conflict misses and read-for-ownership increase it — and hardware counters are the
+only way to know which.
+
+## Reporting template
+
+A machine entry in [Results](/docs/benchmarks/results) records:
+
+```text
+Machine:      <identifier>
+CPU:          <model>, <cores> cores, <sockets> sockets
+Clock:        base <x> GHz, sustained under AVX-512 load <y> GHz
+Vector ISA:   <ISA>, W = <elements> for binary64
+Peak:         <P_max> GFLOP/s   (computed; probe measured <p> GFLOP/s)
+Caches:       L1d <n> KB/core, L2 <n> MB/core, L3 <n> MB shared, line 64 B
+TLB reach:    <n> MB with 4 KB pages, <n> GB with 2 MB pages
+Bandwidth:    triad <B> GB/s at <t> threads (measured), <B1> GB/s at 1 thread
+Ridge point:  I* = <P_max / B> flop/byte
+NUMA:         <nodes> nodes, first-touch parallel
+OS/kernel:    <version>
+Compiler:     <vendor> <version>
+Flags:        <complete command line>
+```
+
+## Related entries
+
+[Method](/docs/benchmarks/method) for the timing protocol;
+[Memory](/docs/high-performance/memory) for the hierarchy;
+[Computational Complexity](/docs/high-performance/computational-complexity) for the cost models;
+[Results](/docs/benchmarks/results) for recorded characterisations.
+
+## References
+
+- S. Williams, A. Waterman and D. Patterson, *Roofline*, CACM 52(4), 2009.
+- J. McCalpin, *STREAM*, 1995.
+- U. Drepper, *What Every Programmer Should Know About Memory*, 2007, on the pointer-chase
+  methodology.
+- G. Ofenbeck et al., *Applying the Roofline Model*, ISPASS 2014.

@@ -1,0 +1,276 @@
+---
+title: Inner Product
+sidebar_label: Inner Product
+sidebar_position: 1
+description: A complete derivation of the inner product, from the bilinear form to a bandwidth-bound kernel with a stated error bound.
+---
+
+# Inner Product
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts state the field and range requirements; std::span carries the data without owning it.'},
+    {std: 'C++23', note: 'std::mdspan supplies strided views for rows and columns without a copy.'},
+    {std: 'C++26', note: 'std::simd expresses the vectorized form portably; std::linalg::dot dispatches to a vendor kernel.', paper: 'P1928R15, P1673R13'},
+  ]}
+/>
+
+## Abstraction
+
+<Definition title="Inner product">
+For a vector space $V$ over $\mathbb{R}$, an inner product is a map
+$\langle\cdot,\cdot\rangle : V \times V \to \mathbb{R}$ that is bilinear, symmetric, and
+positive definite:
+$$
+\langle \alpha x + y, z\rangle = \alpha\langle x,z\rangle + \langle y,z\rangle, \quad
+\langle x,y\rangle = \langle y,x\rangle, \quad
+\langle x,x\rangle > 0 \text{ for } x \neq 0.
+$$
+On $\mathbb{R}^n$ with the standard basis, $\langle x,y\rangle = \sum_{i=1}^n x_i y_i$.
+</Definition>
+
+Over $\mathbb{C}$ the form is conjugate-linear in one argument, and the choice of which is a
+convention that must be fixed once; here it is the first, $\langle x,y\rangle = \sum
+\overline{x_i}\, y_i$.
+
+## Specification
+
+The computation is the reduction
+
+$$
+s = \sum_{i=1}^{n} x_i y_i,
+$$
+
+whose correctness argument uses: multiplication of field elements, addition of field elements,
+an additive identity, and associativity of addition to license any parenthesisation. Symmetry
+and positive definiteness are properties of the result, not requirements on the computation.
+
+The admissible domain is therefore any pair of equal-length sequences over a field, and the
+requirement that is *not* satisfiable by floating-point types — associativity — is what the
+error analysis will have to account for.
+
+## Type and concept
+
+```cpp
+#include <concepts>
+#include <cstddef>
+#include <ranges>
+
+namespace hpc {
+
+template <class T>
+concept Field = requires(T x, T y) {
+    { x + y } -> std::same_as<T>;
+    { x - y } -> std::same_as<T>;
+    { x * y } -> std::same_as<T>;
+    { x / y } -> std::same_as<T>;
+    { T{} }   -> std::same_as<T>;
+};
+
+// Semantic requirements (unchecked):
+//   S1. + is associative.       Violated by every floating-point type.
+//   S2. T{} is an additive identity.
+//   S3. * distributes over +.
+
+template <class R>
+concept FieldRange =
+    std::ranges::random_access_range<R> &&
+    Field<std::ranges::range_value_t<R>>;
+
+}  // namespace hpc
+```
+
+The concept admits `std::vector<double>`, `std::span<const double>`, an `mdspan` row, and a
+strided view, which is the two-different-models test of
+[Generic Programming](/docs/modern-cpp/generic-programming).
+
+## Implementation
+
+The direct form, and the form that acknowledges the machine:
+
+```cpp
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// Sequential: one accumulator, one dependence chain.
+// Error: |ŝ − s| ≤ γ_n Σ|xᵢyᵢ|, with γ_n = nu/(1 − nu).
+constexpr double dot_sequential(std::span<const double> x,
+                                std::span<const double> y) noexcept
+{
+    double acc = 0.0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        acc += x[i] * y[i];
+    }
+    return acc;
+}
+
+// Four accumulators: four independent chains, and a better error bound.
+// Error: |ŝ − s| ≤ γ_{n/4 + 2} Σ|xᵢyᵢ|.
+constexpr double dot_unrolled(std::span<const double> x,
+                              std::span<const double> y) noexcept
+{
+    double a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
+    std::size_t i = 0;
+    for (; i + 4 <= x.size(); i += 4) {
+        a0 += x[i + 0] * y[i + 0];
+        a1 += x[i + 1] * y[i + 1];
+        a2 += x[i + 2] * y[i + 2];
+        a3 += x[i + 3] * y[i + 3];
+    }
+    double acc = (a0 + a1) + (a2 + a3);
+    for (; i < x.size(); ++i) { acc += x[i] * y[i]; }
+    return acc;
+}
+
+}  // namespace hpc
+```
+
+The generic form, over any model of `FieldRange`, with the reduction structure preserved:
+
+```cpp
+#include <cstddef>
+#include <ranges>
+
+namespace hpc {
+
+// Requires: x and y have equal size; + on the value type is associative
+// (S1) if the caller relies on the result being independent of the
+// unrolling factor.
+template <FieldRange R>
+constexpr auto inner_product(const R& x, const R& y)
+    -> std::ranges::range_value_t<R>
+{
+    using scalar = std::ranges::range_value_t<R>;
+    scalar a0{}, a1{}, a2{}, a3{};
+    const std::size_t n = std::ranges::size(x);
+
+    std::size_t i = 0;
+    for (; i + 4 <= n; i += 4) {
+        a0 = a0 + x[i + 0] * y[i + 0];
+        a1 = a1 + x[i + 1] * y[i + 1];
+        a2 = a2 + x[i + 2] * y[i + 2];
+        a3 = a3 + x[i + 3] * y[i + 3];
+    }
+    scalar acc = (a0 + a1) + (a2 + a3);
+    for (; i < n; ++i) { acc = acc + x[i] * y[i]; }
+    return acc;
+}
+
+}  // namespace hpc
+```
+
+Where the result must be accurate independently of $n$, the structure changes rather than the
+tuning:
+
+```cpp
+#include <cmath>
+#include <span>
+
+namespace hpc {
+
+// Ogita–Rump–Oishi: the dot product computed as though in twice the working
+// precision, then rounded once. Error ≈ u + O(nu²)·cond, at ≈ 5× the flops.
+inline double dot_compensated(std::span<const double> x,
+                              std::span<const double> y) noexcept
+{
+    double s = 0.0;
+    double c = 0.0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        const double p = x[i] * y[i];
+        const double e = std::fma(x[i], y[i], -p);   // exact product error
+        const double t = s + p;
+        const double b = t - s;
+        c += ((s - (t - b)) + (p - b)) + e;
+        s = t;
+    }
+    return s + c;
+}
+
+}  // namespace hpc
+```
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'dot_sequential', time: '2n flops', space: 'Θ(1)', note: 'n·λ cycles; latency-bound'},
+    {operation: 'dot_unrolled, k = 4', time: '2n flops', space: 'Θ(4)', note: '≈ n·λ/4; still short of saturation'},
+    {operation: 'dot_unrolled, k = 8, vectorized W = 8', time: '2n flops', space: 'Θ(64)', note: 'Throughput-bound'},
+    {operation: 'dot_compensated', time: '≈ 10n flops', space: 'Θ(1)', note: 'Error independent of n'},
+  ]}
+  unit="n elements, binary64, arithmetic model"
+/>
+
+Memory traffic is $16n$ bytes for $2n$ operations, so the arithmetic intensity is
+
+$$
+I = \frac{2n}{16n} = 0.125 \text{ flop/byte},
+$$
+
+which is an order of magnitude below the ridge point of any current machine. **The inner
+product is bandwidth-bound at every size beyond the cache**, and this single number determines
+everything that follows.
+
+## Hardware mapping
+
+Two regimes must be distinguished, because the correct optimisation differs.
+
+For $n$ small enough that both vectors are cache-resident, the kernel is latency-bound on the
+accumulator chain, and the lever is the accumulator count: with $\lambda = 4$ cycles of
+fused-multiply-add latency and a throughput of two per cycle, saturation requires $k \ge 8$
+independent accumulators, multiplied across $W$ lanes.
+
+For $n$ large enough that the vectors come from memory, the kernel is bandwidth-bound and no
+accumulator arrangement matters. The achievable rate is $B/8$ operations per second for
+bandwidth $B$ bytes per second, and the only remaining levers are reducing the traffic — single
+precision halves it — and using enough cores to saturate the memory system, which one core
+cannot.
+
+Two consequences follow that are easy to get wrong. Parallelising a large inner product across
+cores helps only until bandwidth saturates, typically at a small fraction of the available
+cores. And the compensated variant is nearly free in the bandwidth-bound regime: it performs
+five times the arithmetic on data that is arriving at memory speed, so its extra operations hide
+under the loads.
+
+## Measurement
+
+The quantities to report, following [Conventions](/docs/conventions):
+
+| Quantity | How obtained |
+| --- | --- |
+| Achieved bandwidth | $16n / t$, compared against a stream benchmark on the same machine |
+| Achieved flop rate | $2n / t$, compared against the roofline bound $0.125 \cdot B$ |
+| Accuracy | Against a binary128 or exactly-summed reference on the same inputs |
+| Regime | Which of the two bounds is active at each $n$ |
+
+The sweep runs $n$ from $10^2$ to $10^8$ so that both regimes appear, with the transition at the
+last-level cache size. Reporting a single $n$ conceals the structure entirely.
+
+## Limitations
+
+The concept does not require associativity, and the implementation reassociates. Two calls with
+different unrolling factors return different values; the difference is bounded by the error
+analysis and is not a defect, but it must be documented for callers who compare results across
+builds.
+
+`FieldRange` admits ranges whose `operator[]` is expensive or non-constant-time; the complexity
+claims assume $\Theta(1)$ indexing, which the concept cannot state.
+
+The compensated variant requires a fused multiply-add and round-to-nearest arithmetic, and is
+destroyed by compiler options that permit reassociation.
+
+## Related entries
+
+[Algebra](/docs/mathematics/algebra) for the reduction requirements;
+[Numerical Analysis](/docs/mathematics/numerical-analysis) for the error bounds;
+[Vectorization](/docs/high-performance/vectorization) for the accumulator analysis;
+[Conjugate Gradient](/docs/examples/conjugate-gradient), which consumes this kernel.
+
+## References
+
+- N. J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed., SIAM, 2002, chapter 3.
+- T. Ogita, S. Rump and S. Oishi, *Accurate Sum and Dot Product*, SIAM J. Sci. Comput. 26(6),
+  2005.
+- S. Williams et al., *Roofline*, CACM 52(4), 2009.

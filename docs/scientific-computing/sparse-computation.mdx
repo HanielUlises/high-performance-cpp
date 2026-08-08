@@ -1,0 +1,250 @@
+---
+title: Sparse Computation
+sidebar_label: Sparse Computation
+sidebar_position: 2
+description: Storage formats, sparse products, fill-reducing orderings, and why sparse kernels are bandwidth-bound.
+---
+
+# Sparse Computation
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Ranges express iteration over rows and their non-zero patterns without materialising them.'},
+    {std: 'C++23', note: 'std::mdspan describes the dense parts of a blocked sparse format; std::flat_map suits index lookups.'},
+    {std: 'C++26', note: 'std::simd supports masked and gathered access, the two operations sparse kernels need.', paper: 'P1928R15'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Sparsity">
+A matrix is *sparse* when the number of non-zeros $\mathrm{nnz}$ is small enough that storing
+and operating on only the non-zeros is worthwhile: $\mathrm{nnz} = O(n)$ rather than
+$\Theta(n^2)$. The *pattern* is the set of index pairs at which entries are stored, and it is
+part of the data structure rather than of the mathematics.
+</Definition>
+
+Storage formats differ in what they make cheap:
+
+| Format | Storage | Row access | Column access | Random update |
+| --- | --- | --- | --- | --- |
+| COO | $3\,\mathrm{nnz}$ | $O(\mathrm{nnz})$ | $O(\mathrm{nnz})$ | $O(1)$ append |
+| CSR | $2\,\mathrm{nnz} + n$ | $O(\mathrm{nnz}_i)$ | $O(\mathrm{nnz})$ | $O(\mathrm{nnz})$ |
+| CSC | $2\,\mathrm{nnz} + n$ | $O(\mathrm{nnz})$ | $O(\mathrm{nnz}_j)$ | $O(\mathrm{nnz})$ |
+| BCSR, block $b$ | $\approx \mathrm{nnz}/b + n/b$ | $O(\mathrm{nnz}_i/b)$ | — | — |
+| ELL | $n \cdot \max_i \mathrm{nnz}_i$ | $O(1)$ strided | — | — |
+
+## Motivation
+
+Discretised partial differential equations produce matrices with $O(1)$ non-zeros per row: a
+five-point Laplacian on an $N \times N$ grid gives $n = N^2$ unknowns and $\mathrm{nnz}
+\approx 5n$. Treating such a matrix densely costs $\Theta(n^2)$ storage and $\Theta(n^3)$
+operations; treating it sparsely costs $\Theta(n)$ storage and, with an iterative method,
+$\Theta(n)$ per iteration.
+
+The price is that every sparse operation has an index computation attached, and the ratio of
+arithmetic to indexing is poor. This is the defining performance characteristic of the entire
+area, and it is quantified below.
+
+## Formal formulation
+
+For CSR with 8-byte values and 4-byte indices, the sparse matrix–vector product $y = Ax$ moves
+
+$$
+\text{bytes} \approx 12\,\mathrm{nnz} + 4n + 8n + 8n_{\text{touched}}
+$$
+
+and performs $2\,\mathrm{nnz}$ operations, giving arithmetic intensity
+
+$$
+I \approx \frac{2\,\mathrm{nnz}}{12\,\mathrm{nnz} + 20n} \approx \frac{1}{6} \text{ flop/byte}
+$$
+
+for $\mathrm{nnz} \gg n$. On a machine with 100 GB/s of bandwidth this bounds the kernel at
+about 17 GFLOP/s regardless of core count, vector width or instruction scheduling. Sparse
+matrix–vector multiplication is bandwidth-bound at every size, and this is not remediable by
+implementation.
+
+The access to $x$ is indirect, $x[\text{col}[k]]$, so the effective traffic depends on the
+locality of the column indices. A matrix whose non-zeros are clustered near the diagonal
+touches a small window of $x$ per row and hits in cache; a randomly permuted matrix touches
+$x$ randomly and fetches a line per non-zero, multiplying the traffic by up to eight.
+
+Fill-in governs the feasibility of sparse direct methods. Factorizing a sparse $A$ produces
+factors with non-zeros where $A$ had none, and the amount depends on the elimination order.
+For a two-dimensional grid with nested dissection ordering,
+
+$$
+\mathrm{nnz}(L) = \Theta(n \log n), \qquad \text{flops} = \Theta(n^{3/2}),
+$$
+
+and for a three-dimensional grid,
+
+$$
+\mathrm{nnz}(L) = \Theta(n^{4/3}), \qquad \text{flops} = \Theta(n^2),
+$$
+
+against $\Theta(n^2)$ and $\Theta(n^3)$ for a poor ordering. Finding the ordering minimising
+fill is NP-hard; nested dissection and approximate minimum degree are the heuristics used.
+
+## C++ representation
+
+CSR as a non-owning view, so that a kernel does not dictate ownership:
+
+```cpp
+#include <cstddef>
+#include <cstdint>
+#include <span>
+
+namespace hpc {
+
+// Compressed sparse row: row_offsets has size n + 1, and the entries of row i
+// are [row_offsets[i], row_offsets[i+1]) in column_indices and values.
+struct csr_view {
+    std::size_t rows;
+    std::size_t cols;
+    std::span<const std::size_t> row_offsets;
+    std::span<const std::uint32_t> column_indices;
+    std::span<const double> values;
+
+    std::size_t nnz() const noexcept { return values.size(); }
+};
+
+// y ← A x. Bandwidth-bound: 2·nnz flops against ≈12·nnz + 20n bytes.
+inline void spmv(const csr_view& A, std::span<const double> x,
+                 std::span<double> y) noexcept
+{
+    for (std::size_t i = 0; i < A.rows; ++i) {
+        double acc = 0.0;
+        const std::size_t begin = A.row_offsets[i];
+        const std::size_t end = A.row_offsets[i + 1];
+        for (std::size_t k = begin; k < end; ++k) {
+            acc += A.values[k] * x[A.column_indices[k]];
+        }
+        y[i] = acc;
+    }
+}
+
+}  // namespace hpc
+```
+
+32-bit column indices are used deliberately: they halve the index traffic, which is a third of
+the total, and they suffice for any matrix with fewer than $2^{32}$ columns.
+
+A sparse matrix satisfies the `LinearOperator` concept of
+[Linear Algebra](/docs/mathematics/linear-algebra), so every Krylov method applies unchanged:
+
+```cpp
+#include <span>
+
+namespace hpc {
+
+class csr_operator {
+public:
+    explicit csr_operator(csr_view A) noexcept : A_{A} {}
+
+    std::size_t rows() const noexcept { return A_.rows; }
+    std::size_t cols() const noexcept { return A_.cols; }
+
+    void apply(std::span<const double> x, std::span<double> y) const noexcept {
+        spmv(A_, x, y);
+    }
+
+private:
+    csr_view A_;
+};
+
+}  // namespace hpc
+```
+
+## Implementation
+
+The format is chosen from the access pattern, not from convention. CSR for row-wise products
+and iterative methods; CSC for column operations and for sparse direct factorization; COO for
+assembly, converted once to CSR before computation; BCSR where the pattern has dense blocks, as
+it does for systems of equations discretised on a grid.
+
+Assembly is a separate phase from computation. Building a matrix incrementally in CSR is
+$O(\mathrm{nnz})$ per insertion; the standard construction is to accumulate triplets in COO,
+sort, sum duplicates, and convert, at total cost $\Theta(\mathrm{nnz} \log \mathrm{nnz})$.
+
+Ordering is applied before factorization and before iteration, for different reasons: before
+factorization to reduce fill, before iteration to improve the locality of the indirect access
+to $x$. Reverse Cuthill–McKee reduces bandwidth and improves locality; nested dissection
+reduces fill and parallelises the factorization.
+
+Blocked formats convert indirect accesses into dense ones. For a system with $d$ unknowns per
+grid point, a $d \times d$ block format reduces the index traffic by a factor of $d^2$ and
+makes the inner kernel a small dense product, which vectorizes.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'SpMV, CSR', time: '2·nnz flops', space: 'Θ(n)', note: 'Intensity ≈ 1/6; bandwidth-bound'},
+    {operation: 'SpMV, BCSR block b', time: '2·nnz flops', space: 'Θ(n)', note: 'Index traffic reduced b²-fold'},
+    {operation: 'COO → CSR conversion', time: 'Θ(nnz log nnz)', space: 'Θ(nnz)', note: 'Sort and compress; once'},
+    {operation: 'Sparse Cholesky, 2-D grid, ND order', time: 'Θ(n^{3/2})', space: 'Θ(n log n)', note: 'Fill-in dominates storage'},
+    {operation: 'Sparse Cholesky, 3-D grid, ND order', time: 'Θ(n²)', space: 'Θ(n^{4/3})', note: 'Memory limits feasibility'},
+    {operation: 'CG on a 2-D Laplacian', time: 'Θ(n^{3/2}) total', space: 'Θ(n)', note: 'Θ(√κ) = Θ(N) iterations'},
+    {operation: 'Multigrid on the same problem', time: 'Θ(n)', space: 'Θ(n)', note: 'O(1) iterations, mesh-independent'},
+  ]}
+/>
+
+The last two rows are the reason preconditioning is an algorithmic rather than an
+implementation question: multigrid changes the exponent, and no amount of kernel tuning does.
+
+## Performance considerations
+
+Sparse kernels achieve 5–15 percent of a machine's peak floating-point rate and 60–90 percent
+of its achievable bandwidth. The correct efficiency metric for this area is therefore the
+fraction of the stream bandwidth attained, and reporting GFLOP/s against peak is misleading.
+
+Reducing traffic is the only effective optimisation. Ordering to improve locality of the
+indirect access, 32-bit indices, blocked formats, and single-precision values where the
+conditioning permits are the available levers, and together they account for a factor of two to
+three.
+
+Parallel SpMV by rows is straightforward and load-imbalanced when row lengths vary. Balancing
+by non-zero count rather than by row count fixes this, at the cost of rows split across
+workers and a small combining step.
+
+Preconditioners with sequential structure — incomplete factorizations, Gauss–Seidel — perform
+well per iteration and parallelise poorly; polynomial and Jacobi preconditioners parallelise
+perfectly and converge more slowly. The choice is made on total time, and it changes with core
+count.
+
+## Limitations
+
+The pattern must be known or discoverable before computation; algorithms producing fill
+dynamically require dynamic structures whose cost per insertion undermines the sparsity
+advantage.
+
+Sparse direct methods are limited by memory rather than by arithmetic in three dimensions: the
+factors of a $10^6$-unknown 3-D problem may exceed available memory even when the arithmetic is
+feasible.
+
+Sparse formats interact poorly with vectorization. Row lengths vary, so a vectorized row
+product needs masking; the gather from $x$ costs several times a contiguous load. ELL and
+sliced-ELL formats trade padding for regularity and are worthwhile only when the row lengths
+are nearly uniform.
+
+Iterative convergence depends on the spectrum, which the storage format does not affect. A
+method that stalls does so for spectral reasons, and the response is a preconditioner or a
+different method.
+
+## Related entries
+
+[Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra) for the dense
+counterparts; [Partial Differential Equations](/docs/scientific-computing/pdes) for where these
+matrices come from; [Memory](/docs/high-performance/memory) and
+[Data Layout](/docs/high-performance/data-layout) for the traffic analysis.
+
+## References
+
+- T. Davis, *Direct Methods for Sparse Linear Systems*, SIAM, 2006.
+- Y. Saad, *Iterative Methods for Sparse Linear Systems*, 2nd ed., SIAM, 2003.
+- S. Williams et al., *Optimization of Sparse Matrix–Vector Multiplication on Emerging
+  Multicore Platforms*, SC07.
+- A. George, *Nested Dissection of a Regular Finite Element Mesh*, SIAM J. Numer. Anal. 10(2),
+  1973.

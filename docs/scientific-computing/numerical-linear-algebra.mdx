@@ -1,0 +1,258 @@
+---
+title: Numerical Linear Algebra
+sidebar_label: Numerical Linear Algebra
+sidebar_position: 1
+description: Factorizations, their stability, and the blocked formulations that make them compute-bound.
+---
+
+# Numerical Linear Algebra
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts allow a factorization to state its matrix requirements; std::span gives non-owning workspace.'},
+    {std: 'C++23', note: 'std::mdspan supplies the layout-parameterised matrix reference used throughout this entry.', paper: 'P0009R18'},
+    {std: 'C++26', note: 'std::linalg exposes BLAS-equivalent operations over mdspan, allowing dispatch to vendor kernels.', paper: 'P1673R13'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="The factorizations">
+For $A \in \mathbb{R}^{n \times n}$ or $\mathbb{R}^{m \times n}$:
+$$
+PA = LU, \qquad A = LL^{\mathsf{T}}, \qquad A = QR, \qquad A = U\Sigma V^{\mathsf{T}},
+$$
+with $P$ a permutation, $L$ unit lower triangular, $U$ upper triangular, $L$ lower triangular
+with positive diagonal in the Cholesky case, $Q$ orthogonal, and $\Sigma$ diagonal with
+non-negative entries. Each reduces a problem to triangular or diagonal solves.
+</Definition>
+
+## Motivation
+
+Solving $Ax = b$ by computing $A^{-1}$ costs three times as much as an LU factorization and is
+less accurate; the inverse is never formed in this reference, and the appearance of $A^{-1}$
+in a formula is read as an instruction to solve a system.
+
+The choice among factorizations is determined by structure and by what is being computed:
+
+| Problem | Method | Cost | Comment |
+| --- | --- | --- | --- |
+| General square solve | LU with partial pivoting | $\tfrac{2}{3}n^3$ | Backward stable in practice |
+| Symmetric positive definite | Cholesky | $\tfrac{1}{3}n^3$ | Half the work, unconditionally stable |
+| Least squares, well conditioned | QR (Householder) | $2mn^2 - \tfrac{2}{3}n^3$ | Backward stable |
+| Least squares, rank deficient | SVD or column-pivoted QR | $\Theta(mn^2)$ | Rank revealed |
+| Eigenvalues, symmetric | Tridiagonal reduction then QR/MRRR | $\tfrac{4}{3}n^3 + \Theta(n^2)$ | Stable |
+
+Forming the normal equations $A^{\mathsf{T}}Ax = A^{\mathsf{T}}b$ for a least-squares problem
+squares the condition number, $\kappa_2(A^{\mathsf{T}}A) = \kappa_2(A)^2$, losing half the
+available digits; QR avoids this and costs about twice as much.
+
+## Formal formulation
+
+Gaussian elimination with partial pivoting produces computed factors satisfying
+
+$$
+\hat{L}\hat{U} = P(A + \Delta A), \qquad
+\lVert \Delta A \rVert_\infty \le \gamma_{3n}\,\rho_n \lVert A \rVert_\infty,
+$$
+
+with growth factor $\rho_n = \max_{i,j,k} |a^{(k)}_{ij}| / \max_{i,j}|a_{ij}|$ bounded by
+$2^{n-1}$ in theory and observed to grow like $n^{1/2}$ in practice.
+
+Cholesky requires no pivoting and satisfies the unconditional bound
+
+$$
+\hat{L}\hat{L}^{\mathsf{T}} = A + \Delta A, \qquad
+\lVert \Delta A \rVert_2 \le \gamma_{n+1} \lVert A \rVert_2,
+$$
+
+and its success is itself a test: the factorization completes if and only if $A$ is positive
+definite to within the rounding error, which is the cheapest available such test.
+
+Householder QR is backward stable with $\hat{Q}$ orthogonal to working accuracy,
+
+$$
+\lVert A - \hat{Q}\hat{R} \rVert_F \le c\, n\, u \lVert A \rVert_F,
+$$
+
+whereas classical Gram–Schmidt loses orthogonality at a rate proportional to $\kappa_2(A)$ and
+modified Gram–Schmidt at a rate proportional to $u\,\kappa_2(A)$ — which is why Householder is
+used for factorization and modified Gram–Schmidt only inside Krylov methods where the vectors
+are already nearly orthogonal.
+
+The blocked formulation partitions the factorization into panel operations and trailing
+updates. For LU with block size $n_b$,
+
+$$
+\underbrace{\Theta(n\,n_b^2)}_{\text{panel, level-2}} + \underbrace{\Theta(n^3)}_{\text{trailing update, level-3}},
+$$
+
+so the fraction of work in level-3 operations tends to $1$ as $n$ grows, and the achieved rate
+tends to that of `GEMM`.
+
+## C++ representation
+
+Unblocked Cholesky, stated exactly as the mathematics:
+
+```cpp
+#include <cmath>
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// A ← L with A = L Lᵀ, lower triangle overwritten. Returns the index of the
+// first non-positive pivot, or n on success.
+// Requires: A is symmetric; only the lower triangle is referenced.
+inline std::size_t cholesky_unblocked(
+    std::mdspan<double, std::dextents<std::size_t, 2>> A) noexcept
+{
+    const std::size_t n = A.extent(0);
+    for (std::size_t j = 0; j < n; ++j) {
+        double d = A[j, j];
+        for (std::size_t k = 0; k < j; ++k) { d -= A[j, k] * A[j, k]; }
+        if (!(d > 0.0)) { return j; }
+        const double l = std::sqrt(d);
+        A[j, j] = l;
+
+        for (std::size_t i = j + 1; i < n; ++i) {
+            double s = A[i, j];
+            for (std::size_t k = 0; k < j; ++k) { s -= A[i, k] * A[j, k]; }
+            A[i, j] = s / l;
+        }
+    }
+    return n;
+}
+
+}  // namespace hpc
+```
+
+This form performs $\tfrac{1}{3}n^3$ operations with $\Theta(n^3)$ memory traffic — arithmetic
+intensity $O(1)$, hence bandwidth-bound, hence a small fraction of peak. The blocked form has
+the same operation count and a different traffic profile:
+
+```cpp
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// Right-looking blocked Cholesky. Each step factorizes a diagonal block,
+// solves a triangular system for the panel, and updates the trailing
+// submatrix with a symmetric rank-k product — a level-3 operation.
+std::size_t cholesky_blocked(std::mdspan<double, std::dextents<std::size_t, 2>> A,
+                             std::size_t block_size = 64) noexcept;
+
+}  // namespace hpc
+```
+
+The triangular solve and the rank-$k$ update are the two kernels that must be fast; everything
+else is bookkeeping.
+
+## Implementation
+
+The design used throughout is: a small number of tuned kernels, and algorithms expressed as
+compositions of them. The kernels are matrix–matrix multiply, triangular solve with multiple
+right-hand sides, and symmetric rank-$k$ update; every factorization above is a loop over
+panels invoking them.
+
+The block size is chosen from the cache capacity as in
+[Cache Locality](/docs/high-performance/cache-locality), typically 64 to 256 for current
+caches, and is tuned per machine.
+
+Pivoting is applied as row interchanges recorded in a permutation vector rather than by moving
+data where the layout makes interchange expensive. For column-major storage a row interchange
+is a strided operation over the whole matrix and is the reason blocked LU applies pivots to a
+panel at a time.
+
+Iterative refinement recovers accuracy lost to a lower working precision:
+
+```cpp
+#include <span>
+
+namespace hpc {
+
+// Factorize in binary32, refine in binary64. While κ(A)·u_low < 1 the
+// refined solution attains the accuracy of a binary64 factorization at
+// roughly half the cost and half the memory traffic.
+struct refinement_result {
+    std::size_t iterations;
+    double residual_norm;
+    bool converged;
+};
+
+}  // namespace hpc
+```
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Cholesky, n × n', time: '(1/3)n³ flops', space: 'Θ(1) extra', note: 'Blocked: intensity Θ(b)'},
+    {operation: 'LU with partial pivoting', time: '(2/3)n³ flops', space: 'Θ(n) pivots', note: 'Row interchanges strided'},
+    {operation: 'Householder QR, m × n', time: '2mn² − (2/3)n³', space: 'Θ(n) reflectors', note: 'Backward stable'},
+    {operation: 'Triangular solve, one RHS', time: 'n² flops', space: 'Θ(1)', note: 'Intensity O(1); bandwidth-bound'},
+    {operation: 'Triangular solve, k RHS', time: 'kn² flops', space: 'Θ(1)', note: 'Level-3; compute-bound for k ≳ b'},
+    {operation: 'Symmetric eigenvalues', time: '(4/3)n³ + Θ(n²)', space: 'Θ(n²)', note: 'Reduction dominates'},
+    {operation: 'Thin SVD, m ≫ n', time: '≈ 6mn² + 20n³', space: 'Θ(mn)', note: 'Golub–Kahan'},
+  ]}
+  unit="arithmetic model, real arithmetic"
+/>
+
+## Performance considerations
+
+The single most important structural fact is that unblocked factorizations are bandwidth-bound
+and blocked ones are not. The measured ratio between the two at $n = 4096$ is typically a
+factor of ten to twenty on a multi-core machine, with identical operation counts.
+
+Within the blocked form, the trailing update dominates as $n$ grows, so the quality of the
+`GEMM` kernel determines the achieved rate. Vendor implementations reach 85–95 percent of peak;
+a competent hand-written kernel reaches 60–80 percent; a naive triple loop reaches 3–5 percent.
+Where a vendor library is available, the correct implementation is a call to it.
+
+Parallelism at the level of blocks — a task graph over panel factorizations and updates, rather
+than a fork–join per operation — removes the synchronisation at every step and is what allows
+factorizations to scale to many cores. The dependence structure is the algorithm's, and
+expressing it directly rather than through bulk-synchronous phases is worth a substantial
+factor at high core counts.
+
+Mixed precision is the current lever with the largest effect. A binary32 factorization with
+binary64 refinement halves the memory traffic and doubles the vector width, delivering close to
+a factor of two on the factorization while retaining binary64 accuracy whenever
+$\kappa_2(A)\,u_{32} < 1$.
+
+## Limitations
+
+Backward stability bounds the perturbation to the problem, not the error in the answer. For
+$\kappa_2(A) = 10^{12}$ in binary64, roughly four digits survive, and the residual will still
+be at the level of rounding — which is why a small residual must never be reported as a small
+error.
+
+Partial pivoting has an exponential worst-case growth factor. Matrices attaining it exist and
+are constructible; complete pivoting bounds the growth at $\Theta(n^{1/2}\log n)$ and costs
+$\Theta(n^3)$ comparisons, which is why it is not used by default.
+
+Cholesky requires positive definiteness, and a matrix that is positive definite mathematically
+but indefinite to within rounding will fail. The failure is informative and must be handled,
+not suppressed by adding a shift without recording it.
+
+Dense methods are limited by $\Theta(n^2)$ storage. At $n = 10^5$ a dense matrix in binary64
+requires 80 GB, so problems above that scale must exploit structure — see
+[Sparse Computation](/docs/scientific-computing/sparse-computation).
+
+## Related entries
+
+[Linear Algebra](/docs/mathematics/linear-algebra) for the mathematics;
+[Numerical Analysis](/docs/mathematics/numerical-analysis) for the error model;
+[Cache Locality](/docs/high-performance/cache-locality) for blocking;
+[Benchmarks](/docs/benchmarks) for measured rates.
+
+## References
+
+- G. H. Golub and C. F. Van Loan, *Matrix Computations*, 4th ed., Johns Hopkins, 2013.
+- N. J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed., SIAM, 2002.
+- E. Anderson et al., *LAPACK Users' Guide*, 3rd ed., SIAM, 1999.
+- A. Buttari, J. Langou, J. Kurzak and J. Dongarra, *A Class of Parallel Tiled Linear Algebra
+  Algorithms for Multicore Architectures*, Parallel Computing 35(1), 2009.
+- E. Carson and N. J. Higham, *Accelerating the Solution of Linear Systems by Iterative
+  Refinement in Three Precisions*, SIAM J. Sci. Comput. 40(2), 2018.

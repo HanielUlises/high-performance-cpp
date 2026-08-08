@@ -1,0 +1,225 @@
+---
+title: constexpr / consteval
+sidebar_label: constexpr / consteval
+sidebar_position: 8
+description: The evaluation model of constexpr, constinit and consteval; what each specifier asserts, and how the constant-evaluable subset has grown.
+---
+
+# constexpr / consteval
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'consteval and constinit introduced; transient allocation, virtual calls, dynamic_cast and try-blocks permitted in constant evaluation.', paper: 'P1073R3, P1143R2'},
+    {std: 'C++23', note: 'if consteval; non-literal variables, static and thread_local in constexpr functions when not evaluated; constexpr <cmath> in part.', paper: 'P1938R3, P2242R3'},
+    {std: 'C++26', note: 'constexpr exceptions, constexpr placement new, and constexpr casts from void* extend the subset again.', paper: 'P3068R6, P2747R2'},
+  ]}
+/>
+
+## Definition
+
+Three specifiers govern the relation between a declaration and constant evaluation.
+
+<Definition title="constexpr, consteval, constinit">
+`constexpr` on a function asserts that *some* invocation is a constant expression; the
+function remains callable at runtime. `constexpr` on a variable requires that its
+initialiser be a constant expression, and makes the variable itself usable in constant
+expressions. `consteval` on a function requires that *every* invocation be a constant
+expression: the function is immediate, and no runtime call to it exists. `constinit` on a
+variable of static or thread storage duration requires constant initialisation without
+making the variable const.
+</Definition>
+
+The distinction between "some invocation" and "every invocation" is the whole content of the
+`constexpr`/`consteval` pair, and it is the reason `constexpr` on a function is a weak
+promise: a `constexpr` function that can never be constant-evaluated is ill-formed, no
+diagnostic required, and in practice compiles silently.
+
+## Motivation
+
+Numerical code has a well-defined interest in each specifier.
+
+`constexpr` allows one implementation of an operation to serve both contexts. A polynomial
+evaluation used to construct a table at translation time is the same function used to
+evaluate the polynomial at runtime, so the table cannot drift from the routine.
+
+`consteval` enforces that a computation never reaches runtime. A dimension check, a parsed
+format specification, or a table index derived from a compile-time descriptor should be free
+at runtime by construction rather than by the optimiser's discretion.
+
+`constinit` removes the static initialisation order problem from global data without forcing
+it to be `const`. A mutable global lookup table can be guaranteed to be image data with a
+mutable runtime lifetime.
+
+## Formal formulation
+
+Let $\Phi$ denote the set of constructs prohibited in a core constant expression. The
+constant-evaluable subset of the language is $\mathcal{L} \setminus \Phi$, and the history of
+the feature is a sequence of removals from $\Phi$:
+
+$$
+\Phi_{11} \supsetneq \Phi_{14} \supsetneq \Phi_{17} \supsetneq \Phi_{20} \supsetneq \Phi_{23} \supsetneq \Phi_{26}.
+$$
+
+In C++11, $\Phi$ contained everything but a single return statement. By C++20 it no longer
+contains loops, local mutable state, transient allocation, virtual dispatch, or `try`
+blocks. By C++26 it does not contain throwing and catching exceptions, or placement new. What
+remains in $\Phi$ is essentially: observing the outside world, reading storage whose lifetime
+began before the evaluation, undefined behaviour, and calls to functions not marked
+`constexpr`.
+
+For a `constexpr` function $f$, the language demands semantic agreement across contexts,
+
+$$
+\mathcal{E}_c[\![f(x)]\!] = \mathcal{E}_r[\![f(x)]\!],
+$$
+
+and enforces it only for the operations it defines exactly. Floating-point contraction and
+reassociation performed by an optimiser are outside that guarantee, so agreement for
+floating-point code is a property of the build configuration rather than of the language.
+
+## C++ representation
+
+The three specifiers in their characteristic roles:
+
+```cpp
+#include <array>
+#include <cstddef>
+
+namespace hpc {
+
+// Usable in both contexts: one definition of Horner evaluation.
+template <std::size_t N>
+constexpr double horner(const std::array<double, N>& c, double x) noexcept {
+    double acc = 0.0;
+    for (std::size_t i = N; i-- > 0;) {
+        acc = acc * x + c[i];
+    }
+    return acc;
+}
+
+// Immediate: a call that survives to runtime is ill-formed.
+consteval std::size_t checked_extent(std::size_t rows, std::size_t cols) {
+    return rows * cols;   // overflow here is a diagnostic, not a wrap
+}
+
+// Constant-initialised, mutable, no dynamic initialisation at startup.
+constinit double global_tolerance = 1e-12;
+
+}  // namespace hpc
+```
+
+`if consteval` selects an implementation by context without the pitfalls of
+`std::is_constant_evaluated()` used inside `if constexpr`:
+
+```cpp
+#include <cmath>
+
+namespace hpc {
+
+constexpr double square_root(double x) noexcept {
+    if consteval {
+        // Newton iteration: available during translation, exact per the
+        // abstract machine.
+        if (x <= 0.0) { return 0.0; }
+        double r = x;
+        for (int i = 0; i < 64; ++i) {
+            r = 0.5 * (r + x / r);
+        }
+        return r;
+    } else {
+        return std::sqrt(x);   // hardware instruction at runtime
+    }
+}
+
+}  // namespace hpc
+```
+
+The pattern is the standard resolution of a recurring conflict: a routine that must be
+available during translation but must not give up the hardware instruction at runtime.
+
+## Implementation
+
+`constexpr` is applied to every function whose definition permits it and whose use in a
+constant expression is plausible. It is not applied indiscriminately: on an exported
+interface, `constexpr` is a promise about the definition, and removing it later is a
+breaking change.
+
+Ranges of applicability are asserted rather than assumed:
+
+```cpp
+static_assert(hpc::square_root(4.0) == 2.0);
+static_assert(hpc::horner(std::array{1.0, 0.0, 1.0}, 2.0) == 5.0);
+```
+
+The first assertion is safe because the Newton iteration on $4$ terminates exactly at $2$ in
+binary floating point. Assertions of exact floating-point equality are used only where the
+value is exactly representable and the operation sequence is exact; otherwise the assertion
+is written with a tolerance.
+
+`consteval` is used for functions whose purpose is a check or a derivation of a compile-time
+quantity, since it converts "the optimiser will fold this" into a guarantee. Its cost is that
+an immediate function cannot be passed as a function pointer, cannot appear in an unevaluated
+runtime context, and cannot be called from a non-`consteval` function outside an immediate
+invocation — a restriction relaxed in C++23 for immediate-escalating functions.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'constexpr call, constant-evaluated', time: 'Θ(steps) build', space: 'Θ(live objects) build', note: 'No runtime cost'},
+    {operation: 'constexpr call, runtime-evaluated', time: 'As written', space: 'As written', note: 'No penalty for the specifier'},
+    {operation: 'consteval call', time: 'Θ(steps) build', space: '—', note: 'Runtime cost is zero by construction'},
+    {operation: 'constinit variable', time: 'Θ(1)', space: 'Θ(sizeof) image', note: 'No dynamic initialisation'},
+    {operation: 'Non-constinit dynamic global', time: 'Θ(init) at startup', space: 'Θ(sizeof)', note: 'Order across translation units unspecified'},
+  ]}
+/>
+
+## Performance considerations
+
+The specifiers do not make runtime code faster by themselves; they determine where a
+computation happens. `constexpr` on a function that is only ever called at runtime changes
+nothing about its generated code.
+
+Constant propagation is the indirect benefit. A `constexpr` variable is a value the optimiser
+knows, and a value the optimiser knows removes branches, fixes trip counts, and enables
+unrolling. The effect is significant for blocking parameters and small fixed dimensions and
+negligible elsewhere.
+
+Build time is the direct cost. The constant evaluator is an interpreter operating on a
+representation designed for correctness rather than speed, and a table computed with a
+$\Theta(N^2)$ method at $N = 10^3$ is a measurable fraction of a build. Where a table is
+large, generating it once with a separate program and committing the generated header is the
+faster arrangement, and the `constexpr` routine is retained as the checked reference.
+
+## Limitations
+
+Allocation during constant evaluation is transient: memory allocated must be deallocated
+before the evaluation completes, so returning a `std::vector` from a `constexpr` function to
+a `constexpr` variable does not work. The two-pass idiom — a `consteval` function computing
+the size, then a `constexpr` function filling a `std::array` of that size — is the standard
+workaround, and it evaluates the computation twice.
+
+Floating-point agreement between contexts is not guaranteed under optimisation options that
+permit contraction or reassociation. A table computed at translation time and a runtime
+recomputation may differ in the last bits, which matters when the two are compared.
+
+`constexpr` on a function is not checkable by the compiler in general: the requirement that
+at least one invocation be a constant expression is ill-formed-no-diagnostic-required when
+violated, so the specifier can be a false promise until someone tries to use it.
+
+Implementation limits on evaluation depth and steps are low by default and vary by compiler,
+so a translation-time computation that works on one toolchain may require explicit flags on
+another.
+
+## Related entries
+
+[Compile-Time Programming](/docs/modern-cpp/compile-time-programming) treats the strategy;
+[Metaprogramming](/docs/modern-cpp/metaprogramming) the type-level alternative;
+[Numerical Analysis](/docs/mathematics/numerical-analysis) the floating-point questions that
+context agreement raises.
+
+## References
+
+- ISO/IEC 14882, clauses on constant expressions and the `constexpr` specifier.
+- D. Vandevoorde and R. Smith, *Immediate functions*, P1073R3.
+- B. Revzin, *Using unknown pointers and references in constant expressions*, P2280R4.

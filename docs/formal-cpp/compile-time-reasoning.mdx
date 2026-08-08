@@ -1,0 +1,228 @@
+---
+title: Compile-Time Reasoning
+sidebar_label: Compile-Time Reasoning
+sidebar_position: 6
+description: What the translator can be made to establish, the shape of that proof system, and where its boundary lies.
+---
+
+# Compile-Time Reasoning
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Constraint satisfaction, static_assert over a large constexpr subset, and consteval for computations that must not reach runtime.'},
+    {std: 'C++23', note: 'if consteval and a wider constexpr subset extend what can be evaluated, and therefore asserted.', paper: 'P1938R3'},
+    {std: 'C++26', note: 'Reflection permits assertions about a type\'s structure; contracts move value-level obligations to runtime checks.', paper: 'P2996, P2900'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="The translation-time proof system">
+The propositions a C++ translator can be made to establish are those expressible as a constant
+boolean expression: constraint satisfaction, `static_assert` over `constexpr` evaluation, and
+the well-formedness checks implied by both. The system is *total* — every such proposition is
+decided, subject to implementation limits — and *shallow*: it quantifies over nothing, and its
+subject matter is the program's syntax and the values it can compute during translation.
+</Definition>
+
+## Motivation
+
+An assertion that holds at translation time costs nothing, cannot be bypassed, and fails at the
+point of the defect rather than at the point of its consequence. Where a property is expressible
+in the system, expressing it there dominates every alternative.
+
+The reason for treating the boundary carefully is that the system's shallowness is easy to
+mistake for weakness. It cannot prove that a function terminates, that an invariant holds for
+all inputs, or that a matrix is positive definite. It can establish that a type has the
+operations an algorithm needs, that a table of constants was computed correctly, that a wrapper
+has no representational overhead, and that a conversion is lossless — and these are the
+properties that generic numerical code most often gets wrong.
+
+## Formal formulation
+
+The judgements available are of four kinds.
+
+Satisfaction: $\vdash C(\mathbf{T})$, decided by normalisation and evaluation of atoms. Total,
+with cost linear in the number of atoms.
+
+Constant evaluation: $\vdash e \Downarrow v$, decided by an interpreter over the abstract
+machine. Total up to implementation limits on steps and depth; a non-terminating evaluation is
+reported as exhaustion rather than diverging.
+
+Well-formedness: $\vdash e : T$, the ordinary type judgement, decided by the front end.
+
+Assertion: $\vdash P$ where $P$ is a constant boolean expression, which is the conjunction of the
+above with a truth requirement.
+
+What is absent is quantification. The system has no rule of the form
+
+$$
+\frac{\forall x \in V_T.\; P(x)}{\vdash \forall x.\,P(x)},
+$$
+
+because $V_T$ is not enumerable in the language, and it therefore cannot establish any
+proposition about all values of a type. Every value-level obligation — associativity, an
+invariant, a precondition — is outside it.
+
+The boundary can be stated exactly: a proposition is establishable at translation time iff it is
+a property of the program text and of finitely many values computable during translation.
+
+## C++ representation
+
+The four judgements as they appear in code:
+
+```cpp
+#include <bit>
+#include <concepts>
+#include <limits>
+#include <type_traits>
+
+namespace hpc {
+
+// 1. Satisfaction: the type has the required operations.
+template <class T>
+concept Field = requires(T x, T y) {
+    { x + y } -> std::same_as<T>;
+    { x * y } -> std::same_as<T>;
+    { x / y } -> std::same_as<T>;
+};
+static_assert(Field<double>);
+
+// 2. Constant evaluation: a computed table is correct.
+constexpr double machine_epsilon = std::numeric_limits<double>::epsilon();
+static_assert(machine_epsilon == 0x1p-52);
+
+// 3. Well-formedness and representation.
+template <class T>
+struct strict_wrapper { T value; };
+static_assert(sizeof(strict_wrapper<double>) == sizeof(double));
+static_assert(std::is_trivially_copyable_v<strict_wrapper<double>>);
+
+// 4. Assertion over a computed property: a conversion is lossless.
+template <class From, class To>
+inline constexpr bool lossless_conversion =
+    std::numeric_limits<To>::digits >= std::numeric_limits<From>::digits &&
+    std::numeric_limits<To>::max_exponent >= std::numeric_limits<From>::max_exponent;
+
+static_assert(lossless_conversion<float, double>);
+static_assert(!lossless_conversion<double, float>);
+
+}  // namespace hpc
+```
+
+Assertions of this kind are part of an interface, not part of a test suite. They state what
+surrounding code relies on, and they fail the build at the moment the reliance stops being
+justified.
+
+Forcing a computation to be resolved during translation, so that its absence at runtime is a
+guarantee rather than an optimisation:
+
+```cpp
+#include <cstddef>
+
+namespace hpc {
+
+// An immediate function: any call surviving to runtime is ill-formed.
+consteval std::size_t checked_block_size(std::size_t cache_bytes,
+                                         std::size_t element_bytes)
+{
+    const std::size_t elements = cache_bytes / (3 * element_bytes);
+    std::size_t b = 1;
+    while ((b + 1) * (b + 1) <= elements) { ++b; }
+    return b;
+}
+
+inline constexpr std::size_t l2_block = checked_block_size(1 << 20, sizeof(double));
+static_assert(3 * l2_block * l2_block * sizeof(double) <= (1 << 20));
+
+}  // namespace hpc
+```
+
+The final assertion states the capacity constraint from
+[Cache Locality](/docs/high-performance/cache-locality) and checks that the derived block size
+respects it — a proof, at translation time, of a property that would otherwise be a comment.
+
+## Implementation
+
+The rule applied throughout is to push each obligation to the earliest point at which it can be
+discharged.
+
+Properties of types go to constraints. An algorithm that requires random access says so, and the
+requirement is checked at the call.
+
+Properties of translation-time values go to `static_assert`. Table correctness, representational
+overhead, conversion safety, and derived parameters respecting their constraints are all of this
+kind.
+
+Properties of runtime values go to preconditions, checked in debug builds or, from C++26, as
+contracts. Positive definiteness, index ranges, and non-aliasing are examples.
+
+Properties quantified over all values of a type go to property-based tests, as described in
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements), with the understanding that
+these establish likelihood rather than truth.
+
+Where an assertion is not expressible, the obligation is documented as a numbered requirement
+rather than left implicit. The numbering is what allows an algorithm to say which obligations it
+relies on.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Constraint satisfaction, k atoms', time: 'O(k)', space: 'O(1)', note: 'Memoised per argument tuple'},
+    {operation: 'static_assert over s evaluation steps', time: 'Θ(s) build', space: 'Θ(live objects)', note: 'Interpreted'},
+    {operation: 'Type trait instantiation', time: 'Θ(1)', space: 'Θ(1) retained', note: 'Memoised'},
+    {operation: 'Runtime precondition check', time: 'Cost of the predicate', space: 'Θ(1)', note: 'Debug or contract-enabled builds'},
+    {operation: 'Property test, k trials', time: 'Θ(k · cost)', space: 'Θ(1)', note: 'Test build only'},
+    {operation: 'External verification', time: 'Unbounded', space: '—', note: 'Outside the language'},
+  ]}
+/>
+
+## Performance considerations
+
+Translation-time reasoning has no runtime cost, and it frequently improves the generated code:
+a value the translator knows is a value the optimiser propagates, so a `constexpr` block size
+becomes a literal, a loop bound becomes a constant, and a branch on a type property disappears.
+
+The cost is build time, and it is not negligible in a library that asserts extensively. The
+mitigation is the same as in [Compile-Time Programming](/docs/modern-cpp/compile-time-programming):
+bound the size of translation-time computations, prefer value-level `constexpr` to type-level
+recursion, and measure the build rather than guessing.
+
+Runtime checks are the other half of the picture and must be classified. A check guarding a
+precondition whose violation is undefined may be compiled out; a check that the component
+handles must not be. Confusing the two produces code whose behaviour differs between build
+configurations, which is worse than either choice consistently applied.
+
+## Limitations
+
+No quantification over values, hence no invariants, no algebraic laws, and no functional
+correctness.
+
+No reasoning about termination, resource use, or complexity. A `constexpr` function that fails to
+terminate exhausts an implementation limit rather than being diagnosed as non-terminating.
+
+No reasoning about concurrency. Data-race freedom, ordering and progress are outside the system
+entirely, and are addressed by sanitisers, by model checking, or by proof outside the language.
+
+Assertion failures report the failed expression and not the reason, so a `static_assert` is
+accompanied by a message stating what was expected, and a complex condition is decomposed into
+several assertions so that the failing one is informative.
+
+Implementation limits on evaluation depth and steps are low by default and vary between
+toolchains, so an extensive translation-time computation is not portable without flags.
+
+## Related entries
+
+[Compile-Time Programming](/docs/modern-cpp/compile-time-programming) and
+[constexpr / consteval](/docs/modern-cpp/constexpr-consteval) for the evaluation model;
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements) for the obligations outside the
+system; [Correctness](/docs/formal-cpp/correctness) for what discharges them.
+
+## References
+
+- ISO/IEC 14882, clauses on constant expressions and on constraints.
+- B. Pierce, *Types and Programming Languages*, MIT Press, 2002.
+- R. Smith, *Relaxing constraints on constexpr functions*, N3652 and successors.
+- G. Dos Reis and B. Stroustrup, *General Constant Expressions for System Programming
+  Languages*, SAC 2010.

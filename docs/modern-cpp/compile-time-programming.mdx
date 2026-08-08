@@ -1,0 +1,231 @@
+---
+title: Compile-Time Programming
+sidebar_label: Compile-Time Programming
+sidebar_position: 7
+description: What can be evaluated during translation, what is gained by moving work there, and the boundary between the two evaluation contexts.
+---
+
+# Compile-Time Programming
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Transient allocation, virtual calls, try-blocks and most of the language admitted into constant evaluation; consteval and constinit added.'},
+    {std: 'C++23', note: 'if consteval, constexpr for non-literal variables in unevaluated branches, and a substantially larger constexpr standard library.', paper: 'P1938R3'},
+    {std: 'C++26', note: 'constexpr exceptions, placement new during constant evaluation, and reflection make translation-time computation nearly unrestricted.', paper: 'P3068, P2747'},
+  ]}
+/>
+
+## Definition
+
+Compile-time programming is the evaluation of ordinary C++ code by the translator, producing
+values that are part of the program image rather than computed by it.
+
+<Definition title="Constant evaluation">
+An expression $e$ is a *core constant expression* when its evaluation, following the ordinary
+semantics of the language, does not perform any of a finite list of prohibited operations —
+reading an object whose lifetime began outside the evaluation, calling a non-`constexpr`
+function, undefined behaviour, and so on. A translator that must produce a constant, or that
+is permitted to and chooses to, evaluates $e$ by an interpreter over the abstract machine.
+</Definition>
+
+The definition is negative: everything is permitted except an enumerated set of prohibitions,
+and successive revisions have shortened the set. This is the correct way to read the
+evolution of `constexpr`: not as a growing list of features, but as a shrinking list of
+exclusions.
+
+## Motivation
+
+Work performed during translation is not performed at runtime. For a numerical library three
+classes of work move profitably:
+
+Tables. Quadrature nodes and weights, rotation constants for a fast Fourier transform, and
+polynomial coefficients for special-function approximations can be computed once by the
+compiler and emitted as read-only data, removing an initialisation phase and the branch that
+guards it.
+
+Validation. A dimensioned quantity, a fixed-size conformability check, or a parsed
+specification string can be verified during translation. An error becomes a diagnostic
+rather than a failed assertion in production.
+
+Specialisation. A blocking factor derived from the cache parameters of the target, or a loop
+bound derived from a template argument, becomes a literal in the generated code, allowing
+unrolling and removing bounds arithmetic.
+
+## Formal formulation
+
+Two evaluation contexts exist, and a function may be usable in either. Write $\mathcal{E}_c$
+for constant evaluation and $\mathcal{E}_r$ for runtime evaluation. A `constexpr` function
+$f$ denotes the same mathematical function in both, and the language requires agreement:
+
+$$
+\forall x \in \mathrm{dom}(f):\quad \mathcal{E}_c[\![f(x)]\!] = \mathcal{E}_r[\![f(x)]\!].
+$$
+
+Floating-point evaluation is the point at which the requirement bites hardest. The abstract
+machine's arithmetic is exact IEEE-754 with round-to-nearest, while a runtime evaluation may
+use fused multiply-add, extended precision registers, or reassociation permitted by fast-math
+options. A constant-evaluated result may therefore differ from the runtime result unless
+those options are excluded — a real hazard for tables computed at translation time and
+compared against runtime recomputation.
+
+Termination is bounded by implementation limits rather than by the language: a constant
+evaluation that does not terminate is diagnosed by exceeding a step or depth limit, and the
+recommended minima are small enough that any nontrivial translation-time computation must be
+written with the limits in mind and the compiler flags to raise them documented.
+
+## C++ representation
+
+A constant-evaluated table, with the computation written as ordinary code:
+
+```cpp
+#include <array>
+#include <cstddef>
+
+namespace hpc {
+
+// Gauss–Legendre nodes on [-1, 1] by Newton iteration on the Legendre
+// polynomial, evaluated during translation.
+template <std::size_t N>
+constexpr std::array<double, N> legendre_nodes() {
+    std::array<double, N> x{};
+    for (std::size_t i = 0; i < N; ++i) {
+        // Initial guess: Chebyshev node, refined by Newton's method.
+        double t = -1.0 + 2.0 * static_cast<double>(i) / static_cast<double>(N - 1);
+        for (int iter = 0; iter < 100; ++iter) {
+            double p0 = 1.0;
+            double p1 = t;
+            for (std::size_t k = 2; k <= N; ++k) {
+                const double pk =
+                    ((2.0 * static_cast<double>(k) - 1.0) * t * p1 -
+                     (static_cast<double>(k) - 1.0) * p0) / static_cast<double>(k);
+                p0 = p1;
+                p1 = pk;
+            }
+            const double dp = static_cast<double>(N) * (t * p1 - p0) / (t * t - 1.0);
+            const double dt = p1 / dp;
+            t -= dt;
+            if (dt < 1e-15 && dt > -1e-15) { break; }
+        }
+        x[i] = t;
+    }
+    return x;
+}
+
+inline constexpr auto nodes_8 = legendre_nodes<8>();
+
+}  // namespace hpc
+```
+
+The array occupies read-only data in the image; no code runs at startup to produce it.
+
+Forcing evaluation, and detecting the context:
+
+```cpp
+#include <cstddef>
+
+namespace hpc {
+
+consteval std::size_t required_blocks(std::size_t n, std::size_t block) {
+    return (n + block - 1) / block;   // never evaluated at runtime
+}
+
+constexpr double reciprocal(double x) {
+    if consteval {
+        // Exact per the abstract machine; no fast-math reassociation applies.
+        return 1.0 / x;
+    } else {
+        return 1.0 / x;   // may use a reciprocal-estimate sequence
+    }
+}
+
+}  // namespace hpc
+```
+
+`constinit` states that a variable with static storage duration is initialised during
+translation, turning a silent dynamic initialisation — with its order-of-initialisation
+hazards — into a diagnostic:
+
+```cpp
+constinit double reference_tolerance = 1e-12;
+```
+
+## Implementation
+
+Three rules govern what is moved into translation time in this reference.
+
+A computation is moved when its result is fixed by the program and its cost at runtime would
+be paid repeatedly or in a latency-sensitive phase. Tables and derived constants qualify;
+work whose inputs arrive at runtime obviously does not.
+
+A computation is left at runtime when its translation-time cost is superlinear in a
+parameter the user may raise. The constant evaluator is an interpreter, typically two orders
+of magnitude slower than generated code, and a quadrature table for $N = 10^4$ nodes will
+exceed step limits and dominate build time.
+
+A computation that must agree bit-for-bit between the two contexts is either performed in
+one context only, or performed with the compiler options that guarantee agreement, and the
+requirement is recorded in the code:
+
+```cpp
+static_assert(hpc::nodes_8[0] < 0.0);
+static_assert(hpc::nodes_8[7] > 0.0);
+```
+
+Assertions of this form are the interface to a translation-time computation: they state what
+is being relied upon and fail during the build if it stops holding.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Constant evaluation of s abstract-machine steps', time: 'Θ(s) build time', space: 'Θ(live objects)', note: 'Interpreted; 10²–10³× slower than generated code'},
+    {operation: 'legendre_nodes<N>', time: 'Θ(N² · iter) build', space: 'Θ(N) image', note: 'Runtime cost zero'},
+    {operation: 'Equivalent runtime table construction', time: 'Θ(N² · iter) at startup', space: 'Θ(N) heap', note: 'Plus initialisation-order exposure'},
+  ]}
+/>
+
+## Performance considerations
+
+The runtime benefit is exact and easy to measure: the initialisation phase disappears, and
+what remains is a load from read-only memory that the linker may place adjacent to its point
+of use.
+
+The secondary benefit is optimisation. A value known during translation propagates: a
+blocking factor becomes a literal, loop bounds become constants, and the vectorizer no
+longer emits a scalar prologue for an unknown alignment.
+
+The cost is build time, which for a heavily `constexpr` numerical library becomes the
+binding constraint on development. It is managed by bounding the size of translation-time
+computations, by generating large tables with a separate program and checking in the
+generated header where a table is genuinely large, and by measuring the build with the
+compiler's time-trace facility rather than guessing which header is expensive.
+
+## Limitations
+
+Constant evaluation cannot allocate memory that outlives the evaluation, so a `constexpr`
+computation returning a `std::vector` is well-formed only if the vector is destroyed before
+the evaluation ends. Fixed-extent results — `std::array` with the size as a parameter — are
+the portable form, and computing the size requires a separate `consteval` pass over the same
+inputs.
+
+Undefined behaviour is diagnosed during constant evaluation, which is a benefit, but it means
+that code relying on implementation-defined behaviour cannot be constant-evaluated at all.
+Bit-manipulation of floating-point representations must go through `std::bit_cast`, which is
+`constexpr`, rather than through unions or `memcpy` of active bytes.
+
+Diagnostics from failed constant evaluation report the first prohibited operation, which is
+often far from the cause, and the step-limit failures report exhaustion rather than the
+non-terminating loop.
+
+## Related entries
+
+[constexpr / consteval](/docs/modern-cpp/constexpr-consteval) develops the evaluation model
+and its revision history; [Metaprogramming](/docs/modern-cpp/metaprogramming) covers the
+type-level alternative; [Compile-Time Reasoning](/docs/formal-cpp/compile-time-reasoning)
+treats what can be established rather than merely computed.
+
+## References
+
+- ISO/IEC 14882, clauses on constant expressions.
+- R. Smith, *Relaxing Constraints on constexpr Functions*, N3652, and successors.
+- B. Revzin et al., *constexpr exceptions and allocation*, P3068 and related papers.

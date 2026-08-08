@@ -1,0 +1,269 @@
+---
+title: Linear Algebra
+sidebar_label: Linear Algebra
+sidebar_position: 2
+description: Vector spaces, linear maps, inner products, norms and spectra, and their encoding as constrained C++ interfaces.
+---
+
+# Linear Algebra
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts permit the vector-space axioms to be stated as an interface; ranges supply the traversal vocabulary.'},
+    {std: 'C++23', note: 'std::mdspan gives a standard non-owning matrix reference with a layout policy.', paper: 'P0009R18'},
+    {std: 'C++26', note: 'std::linalg supplies BLAS operations over mdspan, so that generic code can dispatch to vendor kernels.', paper: 'P1673R13'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Vector space">
+A vector space over a field $F$ is an abelian group $(V, +, 0)$ together with a scalar
+multiplication $F \times V \to V$ satisfying
+$$
+\alpha(x + y) = \alpha x + \alpha y, \quad (\alpha + \beta)x = \alpha x + \beta x, \quad
+(\alpha\beta)x = \alpha(\beta x), \quad 1x = x.
+$$
+A map $T : V \to W$ is *linear* when $T(\alpha x + y) = \alpha T(x) + T(y)$.
+</Definition>
+
+Finite-dimensional linear maps are represented by matrices once bases are fixed: for
+$T : F^n \to F^m$ there is a unique $A \in F^{m \times n}$ with $T(x) = Ax$, and composition
+of maps corresponds to matrix multiplication.
+
+An *inner product* on a vector space over $\mathbb{R}$ or $\mathbb{C}$ is a map
+$\langle \cdot, \cdot \rangle : V \times V \to F$ that is linear in its second argument,
+conjugate-symmetric, and positive definite. It induces the norm
+$\lVert x \rVert = \sqrt{\langle x, x \rangle}$.
+
+## Motivation
+
+Linear algebra is the computational core of scientific computing, and the reason is that most
+problems are either linear or are solved by a sequence of linear problems: Newton's method
+solves $J\delta = -r$ at each step, an implicit time integrator solves a linear system per
+step, and a discretised elliptic PDE is a single large sparse system.
+
+The second reason is structural. Matrix multiplication has arithmetic intensity growing with
+the blocking factor, which makes it the one dense kernel able to reach a large fraction of
+peak floating-point throughput. Algorithms are therefore reformulated to spend their time in
+matrix–matrix products — blocked factorizations rather than unblocked ones — and the
+reformulation is a linear-algebraic exercise before it is a performance one.
+
+## Formal formulation
+
+Four quantities govern the numerical behaviour of a linear problem.
+
+The *spectrum* $\sigma(A) = \{\lambda : \det(A - \lambda I) = 0\}$, with the spectral radius
+$\rho(A) = \max_{\lambda \in \sigma(A)} |\lambda|$, determines the convergence of stationary
+iterations: $x_{k+1} = Mx_k + c$ converges for every starting point iff $\rho(M) < 1$.
+
+The *singular values* $\sigma_1 \ge \cdots \ge \sigma_n \ge 0$ of $A$, the square roots of the
+eigenvalues of $A^*A$, give the optimal low-rank approximations by the Eckart–Young theorem:
+
+$$
+\min_{\operatorname{rank}(B) \le k} \lVert A - B \rVert_2 = \sigma_{k+1}.
+$$
+
+The *condition number* in the 2-norm is $\kappa_2(A) = \sigma_1 / \sigma_n$, and it bounds
+the sensitivity of the solution of $Ax = b$:
+
+$$
+\frac{\lVert \delta x \rVert}{\lVert x \rVert} \le \kappa_2(A)
+\left( \frac{\lVert \delta A \rVert}{\lVert A \rVert} + \frac{\lVert \delta b \rVert}{\lVert b \rVert} \right) + O(\delta^2).
+$$
+
+The *norms* used are the induced $p$-norms and the Frobenius norm,
+
+$$
+\lVert A \rVert_1 = \max_j \sum_i |a_{ij}|, \quad
+\lVert A \rVert_\infty = \max_i \sum_j |a_{ij}|, \quad
+\lVert A \rVert_F = \Big( \sum_{i,j} |a_{ij}|^2 \Big)^{1/2},
+$$
+
+with $\lVert A \rVert_2 = \sigma_1$ and the submultiplicativity $\lVert AB \rVert \le \lVert A
+\rVert \lVert B \rVert$ that every error analysis in this reference relies on.
+
+## C++ representation
+
+The vector-space axioms as an interface, and a matrix as an operator rather than as data:
+
+```cpp
+#include <concepts>
+#include <cstddef>
+
+namespace hpc {
+
+template <class V, class F>
+concept VectorSpace =
+    std::regular<V> &&
+    Field<F> &&
+    requires(V x, V y, F a) {
+        { x + y } -> std::same_as<V>;
+        { x - y } -> std::same_as<V>;
+        { a * x } -> std::same_as<V>;
+        { V{}   } -> std::same_as<V>;
+    };
+
+template <class V, class F>
+concept InnerProductSpace =
+    VectorSpace<V, F> &&
+    requires(const V& x, const V& y) {
+        { inner_product(x, y) } -> std::same_as<F>;
+        { norm(x) }             -> std::convertible_to<F>;
+    };
+
+// A linear operator need not be a matrix: only its action is required.
+template <class A, class V>
+concept LinearOperator = requires(const A& op, const V& x, V& y) {
+    { op.rows() } -> std::convertible_to<std::size_t>;
+    { op.cols() } -> std::convertible_to<std::size_t>;
+    op.apply(x, y);                 // y ← A x
+};
+
+template <class A, class V>
+concept SelfAdjointOperator = LinearOperator<A, V>;
+// Semantic requirement: ⟨Ax, y⟩ = ⟨x, Ay⟩ for all x, y.
+
+}  // namespace hpc
+```
+
+The `LinearOperator` concept is the load-bearing abstraction. A dense matrix, a sparse
+matrix, a finite-difference stencil applied without assembly, and a factored preconditioner
+are all models, and every Krylov method in
+[Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra) is written
+against it.
+
+## Implementation
+
+The conjugate-gradient iteration, written against the operator concept, is the canonical
+demonstration that the abstraction is the right one:
+
+```cpp
+#include <cmath>
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+struct cg_result {
+    std::size_t iterations;
+    double residual_norm;
+};
+
+// Solves A x = b for symmetric positive-definite A. The operator is used only
+// through apply(); no representation of A is assumed.
+template <class Operator>
+cg_result conjugate_gradient(const Operator& A,
+                             std::span<const double> b,
+                             std::span<double> x,
+                             std::span<double> r,
+                             std::span<double> p,
+                             std::span<double> Ap,
+                             double tolerance,
+                             std::size_t max_iterations)
+{
+    A.apply(x, Ap);
+    for (std::size_t i = 0; i < b.size(); ++i) {
+        r[i] = b[i] - Ap[i];
+        p[i] = r[i];
+    }
+
+    double rr = inner_product(r, r);
+    const double stop = tolerance * tolerance * rr;
+
+    for (std::size_t k = 0; k < max_iterations; ++k) {
+        if (rr <= stop) { return {k, std::sqrt(rr)}; }
+
+        A.apply(p, Ap);
+        const double alpha = rr / inner_product(p, Ap);
+
+        for (std::size_t i = 0; i < b.size(); ++i) {
+            x[i] += alpha * p[i];
+            r[i] -= alpha * Ap[i];
+        }
+
+        const double rr_next = inner_product(r, r);
+        const double beta = rr_next / rr;
+        rr = rr_next;
+
+        for (std::size_t i = 0; i < b.size(); ++i) {
+            p[i] = r[i] + beta * p[i];
+        }
+    }
+    return {max_iterations, std::sqrt(rr)};
+}
+
+}  // namespace hpc
+```
+
+The workspace is supplied by the caller rather than allocated, which keeps the routine usable
+from a context with a fixed memory budget and makes the $\Theta(n)$ working set explicit in
+the signature.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Inner product, dense', time: 'Θ(n)', space: 'Θ(1)', note: '2n flops, 2n·8 bytes; intensity 1/8 flop/byte'},
+    {operation: 'y ← αAx + y, dense', time: 'Θ(mn)', space: 'Θ(1)', note: 'Intensity ≈ 1/4 flop/byte; bandwidth-bound'},
+    {operation: 'C ← AB, dense n × n', time: 'Θ(n³)', space: 'Θ(1)', note: 'Intensity Θ(n); compute-bound when blocked'},
+    {operation: 'CG iteration', time: 'Θ(nnz + n)', space: 'Θ(n)', note: 'One operator application per step'},
+    {operation: 'CG to relative tolerance ε', time: 'Θ(√κ · log(1/ε)) iterations', space: 'Θ(n)', note: 'κ = condition number in the A-norm'},
+    {operation: 'Dense LU with partial pivoting', time: '(2/3)n³ flops', space: 'Θ(n²)', note: 'Blocked form reaches GEMM throughput'},
+  ]}
+  unit="n-dimensional problems, arithmetic model"
+/>
+
+## Performance considerations
+
+The distinction that organises all dense linear algebra is arithmetic intensity: operations
+per byte moved. Level-1 operations (inner product, `axpy`) have intensity $O(1)$ and are
+bandwidth-bound; level-2 (matrix–vector) likewise; level-3 (matrix–matrix) has intensity
+$\Theta(b)$ for a blocking factor $b$ and is the only level that can approach peak.
+
+The consequence is architectural rather than local: an algorithm is restructured so that its
+arithmetic occurs in level-3 operations. Blocked LU performs the same $\tfrac{2}{3}n^3$
+operations as the unblocked form and runs an order of magnitude faster, because the
+operations occur inside `GEMM` calls on cache-resident blocks. See
+[Cache Locality](/docs/high-performance/cache-locality) for the transfer-count analysis.
+
+For iterative methods the picture inverts. A sparse operator application is bandwidth-bound
+and irreducibly so, and the useful levers are the sparse storage format, the ordering of the
+unknowns, and the preconditioner — which trades operator applications for a better
+$\kappa$ and is therefore an algorithmic rather than a hardware optimisation.
+
+Numerical conditioning bounds what any implementation can deliver. If $\kappa_2(A) \approx
+10^{12}$ in binary64, roughly four significant digits survive, and no arrangement of the
+arithmetic recovers them; the response is reformulation, scaling, or extended precision, not
+tuning.
+
+## Limitations
+
+Concepts state the operations of a vector space and cannot state its axioms. `VectorSpace<V,
+F>` is satisfied by types whose addition is not associative — which includes every
+floating-point vector type in use.
+
+The `LinearOperator` concept cannot state that an operator is symmetric or positive definite,
+and conjugate gradient applied to an operator that is neither may converge to something,
+diverge, or stall, without any diagnostic. Where the property is essential, it is checked
+probabilistically at debug level — $\langle Ax, y \rangle \approx \langle x, Ay \rangle$ for
+random $x, y$ — and documented as a precondition.
+
+Dimensions are runtime values in the interface above, so conformability is a precondition
+rather than a type error. Fixed-extent `mdspan` moves the check to translation time at the
+cost of an instantiation per shape.
+
+## Related entries
+
+[Algebra](/docs/mathematics/algebra) supplies the field;
+[Numerical Analysis](/docs/mathematics/numerical-analysis) the error model;
+[Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra) the
+factorizations; [Data Layout](/docs/high-performance/data-layout) the storage decisions.
+
+## References
+
+- G. H. Golub and C. F. Van Loan, *Matrix Computations*, 4th ed., Johns Hopkins, 2013.
+- L. N. Trefethen and D. Bau, *Numerical Linear Algebra*, SIAM, 1997.
+- N. J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed., SIAM, 2002.
+- C. Eckart and G. Young, *The approximation of one matrix by another of lower rank*,
+  Psychometrika 1, 1936.

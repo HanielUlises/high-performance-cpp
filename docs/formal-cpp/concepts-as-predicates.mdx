@@ -1,0 +1,246 @@
+---
+title: Concepts as Predicates
+sidebar_label: Concepts as Predicates
+sidebar_position: 2
+description: Concepts read as functions from types to booleans, the sets they denote, and the algebra of those sets.
+---
+
+# Concepts as Predicates
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts are boolean-valued expressions over template arguments, usable wherever a constant boolean is.'},
+    {std: 'C++23', note: 'Standard-library concepts extended; the predicate reading is unchanged.'},
+    {std: 'C++26', note: 'Reflection allows satisfaction to be computed and requirements to be generated, extending the predicate into ordinary code.', paper: 'P2996'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Concept as predicate">
+A concept $C$ of arity $k$ is a total function
+$$
+C : \mathcal{T}^k \to \{\mathrm{true}, \mathrm{false}\}
+$$
+evaluated during translation, where $\mathcal{T}$ is the set of types. It denotes the subset
+$$
+\mathcal{C} = \{\,\mathbf{T} \in \mathcal{T}^k : C(\mathbf{T}) \,\},
+$$
+its *model class*. Concepts are compared, combined and reasoned about through their model
+classes.
+</Definition>
+
+Totality is a real property and not a formality: for every type, the concept either holds or
+does not, with no third outcome and no evaluation that fails to terminate. This is what makes
+constrained overload resolution decidable.
+
+## Motivation
+
+The predicate reading turns interface design into a question with a determinate answer. Given an
+algorithm, the question "what should its constraints be" becomes "what is the largest set of
+types on which the correctness argument holds", and set inclusion replaces taste.
+
+It also settles questions that are otherwise argued informally. Whether a concept should be
+split into two is the question of whether the two model classes differ. Whether a refinement is
+correctly stated is the question of whether one class is contained in the other. Whether an
+overload set is well formed is the question of whether the classes are ordered or merely
+overlapping.
+
+## Formal formulation
+
+The connectives correspond to set operations:
+
+$$
+\begin{aligned}
+\mathcal{C}_1 \cap \mathcal{C}_2 &\;\longleftrightarrow\; C_1 \land C_2, \\
+\mathcal{C}_1 \cup \mathcal{C}_2 &\;\longleftrightarrow\; C_1 \lor C_2, \\
+\mathcal{T} \setminus \mathcal{C} &\;\longleftrightarrow\; \lnot C, \\
+\mathcal{C}_1 \subseteq \mathcal{C}_2 &\;\longleftrightarrow\; \forall T.\; C_1(T) \Rightarrow C_2(T).
+\end{aligned}
+$$
+
+Refinement is inclusion, and the standard hierarchies are chains under it. The iterator
+hierarchy is
+
+$$
+\mathcal{C}_{\text{contig}} \subset \mathcal{C}_{\text{rand}} \subset \mathcal{C}_{\text{bidir}}
+\subset \mathcal{C}_{\text{fwd}} \subset \mathcal{C}_{\text{input}},
+$$
+
+and the algebraic hierarchy of [Algebra](/docs/mathematics/algebra) is another.
+
+For an algorithm $f$ with domain of correctness $\mathcal{D}(f)$, a constraint $C$ is
+
+$$
+\textit{sound when } \mathcal{C} \subseteq \mathcal{D}(f), \qquad
+\textit{complete when } \mathcal{C} \supseteq \mathcal{D}(f).
+$$
+
+Sound constraints admit only types on which the algorithm works; complete constraints admit
+every type on which it works. The design target is both, and where they conflict — because the
+condition distinguishing them is semantic and unexpressible — soundness is chosen and the gap is
+documented.
+
+<Proposition title="Subsumption is a proper approximation of inclusion">
+Let $C_1$ and $C_2$ be concepts with $\mathcal{C}_1 \subseteq \mathcal{C}_2$. It does not follow
+that $C_1$ subsumes $C_2$ in the language's sense, since subsumption compares atomic constraints
+syntactically. Overload resolution therefore orders a strict subset of the pairs that inclusion
+orders, and pairs it cannot order are ambiguous.
+</Proposition>
+
+The practical consequence — build refinements by conjoining the concept refined — is developed
+in [Constraints](/docs/formal-cpp/constraints).
+
+## C++ representation
+
+A predicate used as a predicate, in every position where a compile-time boolean is admissible:
+
+```cpp
+#include <concepts>
+#include <type_traits>
+
+namespace hpc {
+
+template <class T>
+concept Additive = requires(T x, T y) {
+    { x + y } -> std::same_as<T>;
+};
+
+// As a constraint.
+template <Additive T>
+constexpr T twice(T x) { return x + x; }
+
+// As a value.
+static_assert(Additive<double>);
+static_assert(Additive<int>);
+static_assert(!Additive<void*>);
+
+// As a branch condition.
+template <class T>
+constexpr bool has_additive_structure() {
+    if constexpr (Additive<T>) { return true; } else { return false; }
+}
+
+// As a component of another predicate.
+template <class T>
+inline constexpr bool additive_and_trivial =
+    Additive<T> && std::is_trivially_copyable_v<T>;
+
+}  // namespace hpc
+```
+
+The model class made explicit by testing membership:
+
+```cpp
+namespace hpc {
+
+// The model class of Additive contains these and not those.
+static_assert(Additive<float> && Additive<double> && Additive<long double>);
+static_assert(!Additive<bool>);   // bool + bool is int, not bool
+
+}  // namespace hpc
+```
+
+The `bool` case is instructive: integral promotion makes `b1 + b2` an `int`, so the compound
+requirement `-> std::same_as<T>` fails. The concept excludes `bool` for a reason that is a fact
+about the language rather than a design decision, and discovering such facts is what writing the
+static assertions is for.
+
+## Implementation
+
+A concept is validated by exhibiting its model class, and specifically by exhibiting at least
+two structurally different models and at least one near-miss that is correctly excluded. A
+concept with one model is a type; a concept excluding nothing is a comment.
+
+```cpp
+#include <concepts>
+#include <list>
+#include <ranges>
+#include <span>
+#include <vector>
+
+namespace hpc {
+
+template <class R>
+concept ContiguousDoubles =
+    std::ranges::contiguous_range<R> &&
+    std::same_as<std::ranges::range_value_t<R>, double>;
+
+// Two structurally different models.
+static_assert(ContiguousDoubles<std::vector<double>>);
+static_assert(ContiguousDoubles<std::span<double>>);
+
+// Correctly excluded near-misses.
+static_assert(!ContiguousDoubles<std::list<double>>);      // not contiguous
+static_assert(!ContiguousDoubles<std::vector<float>>);     // wrong value type
+
+}  // namespace hpc
+```
+
+These assertions belong beside the concept definition. They document the model class, they fail
+the build when a change to the definition silently widens or narrows it, and they are the only
+executable specification a concept has.
+
+Concepts are named for the structure they denote, not for the algorithm that consumes them. A
+concept named `SortableThing` describes a use; a concept named `RandomAccessRange` describes a
+set of types, and the second is reusable.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Evaluate a concept, k atoms', time: 'O(k)', space: 'O(1)', note: 'Short-circuited; memoised per argument'},
+    {operation: 'Normalise a concept, expansion s', time: 'Θ(s)', space: 'Θ(s)', note: 'Once per constraint expression'},
+    {operation: 'Test inclusion of model classes', time: 'Undecidable in general', space: '—', note: 'Requires quantification over all types'},
+    {operation: 'Test subsumption', time: 'O(mn) typical', space: 'O(m+n)', note: 'Decidable; strictly weaker than inclusion'},
+  ]}
+  unit="translation"
+/>
+
+The third row is the important one: the relation the designer reasons about is not computable,
+and the relation the compiler uses is a sound but incomplete approximation of it.
+
+## Performance considerations
+
+Concepts are erased entirely; the predicate reading has no runtime content. What it affects is
+build time and generated-code selection.
+
+Cheap and discriminating atoms are placed first in a conjunction, since evaluation
+short-circuits. `std::same_as<T, U>` is a single trait instantiation; a `requires`-expression
+with several compound requirements is many. Ordering by cost is worth a measurable fraction of
+compile time in a heavily constrained library.
+
+Because concept satisfaction is memoised per argument tuple, repeating the same concept across
+an overload set costs once, whereas repeating an equivalent but textually distinct expression
+costs each time — and additionally breaks subsumption.
+
+## Limitations
+
+Only syntax is checked. The model class of `Ring<T>` is the set of types with the right
+operations, not the set of rings, and every semantic obligation is outside the predicate. See
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements).
+
+Model classes cannot be enumerated, so a concept's meaning cannot be inspected; it can only be
+probed one type at a time, which is what the static assertions above do.
+
+Satisfaction depends on the declarations visible at the point of check, so a concept may be
+satisfied in one translation unit and not in another. The predicate is total, but it is a
+predicate over a context as well as a type.
+
+Concepts cannot quantify. "For every type $U$ convertible to $T$" is not expressible, and
+requirements of that shape are approximated by requiring a small set of representative
+instantiations.
+
+## Related entries
+
+[Concepts](/docs/modern-cpp/concepts) for the mechanism;
+[Constraints](/docs/formal-cpp/constraints) for subsumption;
+[Types as Abstractions](/docs/formal-cpp/types-as-abstractions) for what the members of a model
+class are; [Generic Programming](/docs/modern-cpp/generic-programming) for the design method.
+
+## References
+
+- ISO/IEC 14882, clauses on concepts and constraints.
+- A. Stepanov and P. McJones, *Elements of Programming*, Addison-Wesley, 2009.
+- G. Dos Reis and B. Stroustrup, *Specifying C++ Concepts*, POPL 2006.
+- J. Siek and A. Lumsdaine, *Essential Language Support for Generic Programming*, PLDI 2005.

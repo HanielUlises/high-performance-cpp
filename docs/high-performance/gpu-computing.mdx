@@ -1,0 +1,223 @@
+---
+title: GPU Computing
+sidebar_label: GPU Computing
+sidebar_position: 9
+description: Throughput architectures, the execution model they impose, and the code shapes that use them.
+---
+
+# GPU Computing
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Device compilers accept a large C++ subset; concepts and constexpr are usable in device code.'},
+    {std: 'C++23', note: 'std::mdspan is the natural interface for device buffers with explicit layouts.', paper: 'P0009R18'},
+    {std: 'C++26', note: 'Senders and receivers provide a standard model for asynchronous offload and dependency expression.', paper: 'P2300R10'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Throughput architecture">
+A throughput processor maximises aggregate operations per second rather than the latency of any
+one instruction stream. It provides many simple cores executing in lockstep groups (warps or
+wavefronts of 32 or 64 lanes), hides memory latency by switching between a large number of
+resident thread groups rather than by caching and speculation, and exposes a programmer-managed
+scratchpad in place of a transparent cache hierarchy.
+</Definition>
+
+## Motivation
+
+The architectural difference produces a difference in achievable rates of roughly an order of
+magnitude in both floating-point throughput and memory bandwidth, at comparable power. For a
+kernel that fits the model — regular, data-parallel, with arithmetic intensity above the
+device's ridge point — this is available.
+
+The qualification is the entire content of the entry. Kernels that do not fit run
+substantially worse than on a CPU, and the mismatches are structural rather than incidental:
+divergent control flow, irregular memory access, small problem sizes, and frequent host
+synchronisation each cost most of the advantage.
+
+## Formal formulation
+
+The roofline for a device with peak rate $P_{\max}$ and bandwidth $B$ is unchanged in form,
+
+$$
+P \le \min(P_{\max}, I \cdot B),
+$$
+
+but the ridge point $I^\* = P_{\max}/B$ is far to the right: for a device at 10 TFLOP/s and 1
+TB/s, $I^\* = 10$ flop/byte, against 5–10 for a CPU with much lower absolute values. A kernel
+with $I = 1$ achieves at most a tenth of peak, and the achievable *absolute* rate may still
+exceed the CPU's — which is why bandwidth-bound kernels are still worth offloading, and why
+their speed-up is the bandwidth ratio rather than the flop ratio.
+
+Occupancy governs latency hiding. With $L$ cycles of memory latency and $W$ lanes issuing one
+instruction every $T$ cycles, hiding the latency requires
+
+$$
+\text{resident groups} \ge \frac{L}{T \cdot \text{independent instructions per group}},
+$$
+
+so a kernel using many registers per thread — reducing the number of resident groups — may be
+latency-exposed despite perfect memory access patterns. The trade between register use and
+occupancy is the characteristic tuning decision.
+
+Memory coalescing is a hard requirement rather than an optimisation. Consecutive lanes
+accessing consecutive addresses produce one transaction per 32 or 128 bytes; a stride of $s$
+elements produces up to $W$ transactions, dividing effective bandwidth by $W$.
+
+Transfer cost across the host interconnect is
+
+$$
+T_{\text{transfer}} = \alpha + \frac{n}{B_{\text{link}}},
+$$
+
+with $B_{\text{link}}$ an order of magnitude below device memory bandwidth. A kernel whose
+data must cross for each invocation is bounded by the link, and the standard response is to
+keep data resident on the device across many kernels.
+
+## C++ representation
+
+Device code is compiled by a separate toolchain, so the portable part of a library is the
+interface and the algorithm, not the kernel. The structure used here keeps the mathematics in
+shared code and isolates the execution model:
+
+```cpp
+#include <cstddef>
+#include <mdspan>
+#include <span>
+
+namespace hpc {
+
+// Execution space as a policy: the same algorithm is instantiated for each,
+// and only the launch differs.
+struct host_execution {};
+struct device_execution {};
+
+template <class Execution>
+struct axpy_kernel;
+
+template <>
+struct axpy_kernel<host_execution> {
+    static void run(double alpha, std::span<const double> x, std::span<double> y);
+};
+
+template <>
+struct axpy_kernel<device_execution> {
+    // Takes device pointers; the launch configuration is chosen from the
+    // extent and the device's properties.
+    static void run(double alpha, std::span<const double> x, std::span<double> y);
+};
+
+}  // namespace hpc
+```
+
+The element-wise body — the mathematics — is written once as a `constexpr` function usable in
+both, and the per-space code contains only the launch and the indexing:
+
+```cpp
+namespace hpc {
+
+// Shared body: no reference to the execution space.
+constexpr double axpy_element(double alpha, double xi, double yi) noexcept {
+    return alpha * xi + yi;
+}
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Four rules follow from the model.
+
+Access is coalesced by construction. The layout is chosen so that lane $l$ of a group reads
+element $\text{base} + l$; for a matrix this usually means the opposite storage order from the
+CPU version, which is why layout is a policy rather than a constant. See
+[Data Layout](/docs/high-performance/data-layout).
+
+Divergence is avoided within a group. A branch taken by some lanes and not others executes
+both sides with the inactive lanes masked, so the cost is the sum. Where the branch depends on
+data, sorting or partitioning so that a group agrees recovers the loss.
+
+Data stays resident. Transfers are amortised across many kernel launches, and the working set
+is allocated once on the device rather than per call. A pipeline of ten kernels with one
+transfer at each end is an order of magnitude better than ten kernels with twenty transfers.
+
+Launches are asynchronous and dependencies are explicit. Synchronising with the host after
+each kernel serialises the device and exposes the launch latency, of order 5–10 microseconds,
+on every step.
+
+Shared memory — the programmer-managed scratchpad — is used exactly as cache blocking is used
+on a CPU, and for the same reason: it converts a bandwidth-bound tile traversal into a
+compute-bound one. The block size is bounded by the scratchpad capacity per group, which is
+the device's analogue of the capacity constraint in
+[Cache Locality](/docs/high-performance/cache-locality).
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Coalesced read of n elements', time: 'Θ(n/B_device)', space: 'Θ(1)', note: 'One transaction per 32–128 bytes'},
+    {operation: 'Strided read, stride ≥ group width', time: 'Θ(n · W / B_device)', space: 'Θ(1)', note: 'One transaction per element'},
+    {operation: 'Host-to-device transfer of n bytes', time: 'α + n/B_link', space: 'Θ(n)', note: 'B_link ≈ 0.05–0.1 × B_device'},
+    {operation: 'Kernel launch', time: '≈ 5–10 μs', space: 'Θ(1)', note: 'Amortise over sufficient work'},
+    {operation: 'Divergent branch, k distinct paths', time: 'Σ of all path costs', space: 'Θ(1)', note: 'Lanes masked, not skipped'},
+    {operation: 'Device-wide reduction of n elements', time: 'Θ(n/B_device + log n)', space: 'Θ(groups)', note: 'Two-stage: per-group then global'},
+  ]}
+/>
+
+## Performance considerations
+
+The correct comparison is against a *tuned* CPU implementation on the same problem. Speed-ups
+of two orders of magnitude reported in the literature are usually against untuned, unvectorized,
+single-threaded baselines; against a vectorized, multi-threaded, cache-blocked CPU
+implementation the honest figures for bandwidth-bound kernels are the bandwidth ratio, roughly
+5–10×, and for compute-bound dense kernels the flop ratio, roughly 10–20×.
+
+Problem size determines whether offload pays at all. Below a threshold — typically $10^5$ to
+$10^6$ elements for a simple kernel — the launch latency and transfer cost exceed the
+computation, and the CPU wins outright.
+
+Precision has a larger effect than on CPUs. Consumer devices have binary64 rates between
+$1/2$ and $1/64$ of binary32; where binary64 throughput is $1/32$, a double-precision kernel
+may be slower than on the CPU. The precision requirement is therefore established from the
+conditioning analysis before the device is chosen.
+
+Atomics on device memory are considerably more expensive than the per-group reductions that
+replace them. A two-stage reduction — within a group using the scratchpad, then across groups
+— is the standard construction and avoids global atomics almost entirely.
+
+## Limitations
+
+Device code is compiled by vendor toolchains with varying C++ support, so the portable subset
+is narrower than the standard. Exceptions, RTTI and much of the standard library are
+unavailable in device code.
+
+Performance portability across vendors is limited: group width, scratchpad capacity, cache
+behaviour and the ridge point differ, and a kernel tuned for one device is typically off by a
+substantial factor on another. Portability layers reduce the problem to tuning parameters
+rather than eliminating it.
+
+Debugging and profiling are weaker than on the host, and floating-point results differ from
+CPU results for the same reasons vectorized results do — different reduction orders, different
+use of fused multiply-add — so validation is against a tolerance derived from the error
+analysis.
+
+Memory capacity on the device is a hard limit, and problems exceeding it require explicit
+staging, which reintroduces the link bandwidth as the binding constraint.
+
+## Related entries
+
+[SIMD](/docs/high-performance/simd) for the same idea at CPU width;
+[Parallelism](/docs/high-performance/parallelism) for decomposition;
+[Cache Locality](/docs/high-performance/cache-locality) for the blocking that scratchpad use
+mirrors; [Data Layout](/docs/high-performance/data-layout) for coalescing.
+
+## References
+
+- J. Hennessy and D. Patterson, *Computer Architecture: A Quantitative Approach*, 6th ed.,
+  chapter 4.
+- V. Volkov, *Understanding Latency Hiding on GPUs*, PhD thesis, UC Berkeley, 2016.
+- V. Lee et al., *Debunking the 100X GPU vs. CPU Myth*, ISCA 2010.
+- C. Trott et al., *Kokkos 3: Programming Model Extensions for the Exascale Era*, IEEE TPDS
+  33(4), 2022.

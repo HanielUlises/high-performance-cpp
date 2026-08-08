@@ -1,0 +1,64 @@
+---
+title: Mathematics
+sidebar_label: Overview
+sidebar_position: 0
+description: The structures generic numerical components are written against, stated in the form used later as concept requirements.
+---
+
+# Mathematics
+
+The mathematics in this part is selected by a single criterion: it must be needed to state
+what a component computes, or to bound the error in what it actually computes.
+
+## The role of this part
+
+A generic numerical component has a domain, and that domain is almost always an algebraic
+structure. A summation algorithm needs an associative operation with an identity; a
+Gram–Schmidt orthogonalisation needs an inner product space over an ordered field; a
+conjugate-gradient iteration needs a symmetric positive-definite operator and the field
+arithmetic to form Krylov combinations. These requirements are mathematical statements before
+they are C++ concepts, and stating them first is what keeps the concepts honest.
+
+The second role is error. Every computation in floating-point arithmetic solves a nearby
+problem, and the distance between that problem and the intended one is governed by the
+conditioning of the problem and the stability of the algorithm. This is not a caveat attached
+to numerical entries; it is part of their specification, and it is developed in
+[Numerical Analysis](/docs/mathematics/numerical-analysis).
+
+## Entries
+
+| Entry | Subject |
+| --- | --- |
+| [Algebra](/docs/mathematics/algebra) | Monoids, groups, rings, fields, and the concept hierarchy they induce |
+| [Linear Algebra](/docs/mathematics/linear-algebra) | Vector spaces, linear maps, inner products, spectra, norms |
+| [Analysis](/docs/mathematics/analysis) | Continuity, differentiability, convergence, and the estimates that support numerics |
+| [Numerical Analysis](/docs/mathematics/numerical-analysis) | Floating-point arithmetic, conditioning, stability, error bounds |
+| [Optimization](/docs/mathematics/optimization) | Convexity, optimality conditions, rates of convergence |
+| [Probability](/docs/mathematics/probability) | Measure, expectation, concentration, and randomised numerical methods |
+| [Computational Mathematics](/docs/mathematics/computational-mathematics) | Exact arithmetic, structure exploitation, and the arithmetic complexity of algebraic problems |
+
+## Notation
+
+Notation follows [Conventions](/docs/conventions). In brief: $F$ is a field, $V$ a vector
+space over $F$, $A \in F^{m \times n}$ a matrix, $u$ the unit roundoff, and $\hat{x}$ a
+computed approximation to $x$.
+
+## How structure becomes an interface
+
+A structure is a carrier set with operations and laws. The translation into C++ is
+mechanical for the carrier and the operations, and impossible for the laws:
+
+$$
+(R, +, \cdot, 0, 1) \quad\longmapsto\quad \texttt{concept Ring} = \text{operations only}.
+$$
+
+The laws — associativity, distributivity, the identities — are recorded as semantic
+requirements and go unchecked. This is not a deficiency to be worked around but a fact to be
+managed, and the discipline for managing it is in
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements).
+
+The floating-point case is worth stating at the outset because it recurs in every entry:
+`double` with addition is not a monoid, since addition is not associative. Every algorithm
+whose correctness argument uses associativity — every parallel reduction, every vectorized
+summation — therefore computes something other than the mathematical sum, and the difference
+is bounded rather than absent.

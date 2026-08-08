@@ -1,0 +1,229 @@
+---
+title: Vectorization
+sidebar_label: Vectorization
+sidebar_position: 6
+description: Dependence analysis, the transformations that expose data parallelism, and what blocks a vectorizer.
+---
+
+# Vectorization
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Parallel algorithms admit std::execution::unseq, permitting vectorized execution of standard algorithms.'},
+    {std: 'C++23', note: 'Range algorithms remain unparallelised; explicit loops remain the reliable vectorization target.'},
+    {std: 'C++26', note: 'std::simd makes vectorization explicit, removing the dependence on a compiler heuristic.', paper: 'P1928R15'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Vectorizable loop">
+A loop is vectorizable when its iterations can be executed in groups of $W$ simultaneously
+without changing the result. Formally, the loop must carry no dependence of distance less than
+$W$ in the direction of execution: for iterations $i < j$ with $j - i < W$, no memory location
+written in $i$ may be read or written in $j$.
+</Definition>
+
+## Motivation
+
+The transformation is worth a factor of up to $W$ on compute-bound kernels and nothing on
+memory-bound ones, so the question is never "should this be vectorized" but "is this loop
+compute-bound, and if so what prevents the compiler from vectorizing it".
+
+The reason the second question matters is that auto-vectorization is a heuristic decision made
+under incomplete information. The compiler must prove the absence of dependence, and where it
+cannot prove it, it must assume the worst. Most failures to vectorize are failures of proof
+rather than genuine dependence, and they are addressable by supplying the missing information.
+
+## Formal formulation
+
+Dependences are classified by the order of access. For iterations $i < j$:
+
+$$
+\begin{aligned}
+\text{flow (RAW)}&: \; \text{write at } i, \text{ read at } j &&\text{— blocks vectorization} \\
+\text{anti (WAR)}&: \; \text{read at } i, \text{ write at } j &&\text{— blocks, removable by copying} \\
+\text{output (WAW)}&: \; \text{write at } i, \text{ write at } j &&\text{— blocks, usually a bug} \\
+\text{reduction}&: \; \text{accumulation into one location} &&\text{— vectorizable under associativity}
+\end{aligned}
+$$
+
+For an access pair $A[f(i)]$ and $A[g(j)]$ with affine $f, g$, the dependence question is
+whether $f(i) = g(j)$ has an integer solution in the iteration range — a linear Diophantine
+problem the compiler solves exactly for affine subscripts and abandons for anything else.
+Indirect indexing $A[\text{index}[i]]$ is the standard case where no proof is possible.
+
+The reduction case is the important exception. The recurrence
+
+$$
+s_{i+1} = s_i \oplus x_i
+$$
+
+carries a dependence of distance one, and is nonetheless vectorizable when $\oplus$ is
+associative, by splitting into $W$ independent partial sums and combining at the end. For
+floating-point $\oplus$ the associativity does not hold exactly, so the compiler will not
+perform the split unless permitted, and the permission changes the computed result.
+
+## C++ representation
+
+The forms that vectorize, and the forms that do not:
+
+```cpp
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// Vectorizes: unit stride, no loop-carried dependence, known trip count.
+inline void scale(std::span<double> x, double alpha) noexcept {
+    for (std::size_t i = 0; i < x.size(); ++i) { x[i] *= alpha; }
+}
+
+// Does not vectorize: flow dependence of distance one.
+inline void prefix_recurrence(std::span<double> x) noexcept {
+    for (std::size_t i = 1; i < x.size(); ++i) { x[i] += x[i - 1]; }
+}
+
+// Vectorizes only with reassociation permitted: reduction.
+inline double sum(std::span<const double> x) noexcept {
+    double acc = 0.0;
+    for (const double v : x) { acc += v; }
+    return acc;
+}
+
+// Vectorizes without permission: the reassociation is written explicitly.
+inline double sum_unrolled(std::span<const double> x) noexcept {
+    double a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
+    std::size_t i = 0;
+    for (; i + 4 <= x.size(); i += 4) {
+        a0 += x[i];  a1 += x[i + 1];  a2 += x[i + 2];  a3 += x[i + 3];
+    }
+    double acc = (a0 + a1) + (a2 + a3);
+    for (; i < x.size(); ++i) { acc += x[i]; }
+    return acc;
+}
+
+}  // namespace hpc
+```
+
+The last two functions compute different values, and the difference is the point: `sum` is the
+sequential sum with error bound $\gamma_{n-1}$, `sum_unrolled` is a four-way split with a
+better bound. Writing the split explicitly makes the choice visible in the source rather than
+delegating it to a compiler flag that changes every reduction in the program.
+
+Aliasing, resolved at the interface:
+
+```cpp
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// The precondition is part of the contract; a debug build checks it.
+// Requires: out and in do not overlap.
+inline void transform_disjoint(std::span<const double> in,
+                               std::span<double> out,
+                               double alpha) noexcept
+{
+    const double* __restrict pi = in.data();
+    double* __restrict po = out.data();
+    for (std::size_t i = 0; i < in.size(); ++i) { po[i] = alpha * pi[i]; }
+}
+
+}  // namespace hpc
+```
+
+## Implementation
+
+The recurring transformations, each applied where a dependence or a structure blocks the
+vectorizer.
+
+Loop interchange moves the unit-stride index innermost. It is legal when the dependence
+directions permit, and it is the transformation that makes the `i, p, j` ordering of a matrix
+multiplication vectorizable where `i, j, p` is not.
+
+Loop distribution splits a loop containing both a vectorizable and a non-vectorizable
+statement into two loops, so that the first vectorizes. It costs an extra pass over the data
+and is profitable when the vectorizable part dominates.
+
+Scalar expansion removes an anti-dependence through a temporary by giving each iteration its
+own copy, converting a scalar into a short array.
+
+Reduction splitting is the explicit multiple-accumulator form above, applied whenever a
+reduction is on the critical path.
+
+Gather elimination replaces indirect indexing by a sorted or blocked traversal where the index
+set permits, or by a change of layout, since a gather rarely pays.
+
+Scans are the case where a genuine dependence is broken by changing the algorithm rather than
+the loop: the sequential prefix sum has a distance-one dependence, and the work-efficient
+parallel scan performs $2n$ operations in $\Theta(\log n)$ dependent steps, vectorizing and
+parallelising at the cost of doubling the work.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Elementwise transform', time: '⌈n/W⌉ vector ops', space: 'Θ(1)', note: 'Full width achievable'},
+    {operation: 'Reduction, sequential', time: 'n · λ', space: 'Θ(1)', note: 'Latency-bound; not vectorized'},
+    {operation: 'Reduction, W lanes × k accumulators', time: 'n/(Wk) · λ', space: 'Θ(Wk)', note: 'Saturates for k ≥ λ/τ'},
+    {operation: 'Sequential prefix sum', time: 'n additions, n dependent', space: 'Θ(1)', note: 'Not vectorizable as written'},
+    {operation: 'Work-efficient parallel scan', time: '2n additions, Θ(log n) depth', space: 'Θ(n)', note: 'Vectorizes and parallelises'},
+    {operation: 'Gather-based loop', time: '≈ n · L1 latency / issue', space: 'Θ(1)', note: 'Often slower than scalar'},
+  ]}
+/>
+
+## Performance considerations
+
+The measured speed-up from vectorization is bounded by $\min(W, \text{roofline headroom})$,
+and reporting a speed-up without stating which bound was active is uninformative. A kernel at
+90 percent of its bandwidth roofline has no headroom and will show a speed-up near one however
+well it vectorizes.
+
+Short loops rarely pay. The fixed cost of the vector prologue, the alignment peeling and the
+remainder handling is tens of cycles, so loops with $n$ of order $W$ are frequently slower
+vectorized than scalar. Compilers estimate this with a cost model and are sometimes wrong;
+where the trip count is known at compile time, making it a template parameter lets the
+compiler decide with full information.
+
+Mixed precision interacts with width. Computing in binary32 doubles $W$ and halves memory
+traffic; whether the accuracy suffices is the question of
+[Numerical Analysis](/docs/mathematics/numerical-analysis), and the common resolution —
+accumulate in binary64 while multiplying in binary32 — costs a widening conversion per element
+and still gains.
+
+Verification is by the optimisation report and by the assembly. A claim that a loop vectorized
+is checked, not assumed, and the check belongs in the build so that a regression is caught
+when it happens rather than in the next benchmark run.
+
+## Limitations
+
+Auto-vectorization is not a guarantee. Its decisions depend on the compiler, its version, the
+flags, and the surrounding code, and none of these is stable across a project's lifetime.
+Explicit vectorization with `std::simd` trades portability of source for predictability of
+outcome.
+
+Some algorithms have irreducible sequential dependence — Gauss–Seidel sweeps, sequential
+Monte Carlo, and any recurrence without an associative reformulation — and the response is to
+change the algorithm, not the loop. Red-black ordering for Gauss–Seidel is exactly this: a
+different algorithm with different convergence, chosen because it vectorizes.
+
+Vectorized floating-point results differ from scalar ones, so a test suite comparing against
+a scalar reference must use tolerances derived from the error analysis rather than exact
+equality.
+
+## Related entries
+
+[SIMD](/docs/high-performance/simd) for the hardware;
+[Data Layout](/docs/high-performance/data-layout) for the stride prerequisite;
+[Numerical Analysis](/docs/mathematics/numerical-analysis) for the reassociation bounds;
+[Examples](/docs/examples) for kernels developed with vectorization stated at each step.
+
+## References
+
+- R. Allen and K. Kennedy, *Optimizing Compilers for Modern Architectures*, Morgan Kaufmann,
+  2001.
+- G. Blelloch, *Prefix Sums and Their Applications*, CMU-CS-90-190, 1990.
+- D. Nuzman, I. Rosen and A. Zaks, *Auto-Vectorization of Interleaved Data for SIMD*, PLDI
+  2006.
+- A. Fog, *Optimizing Subroutines in Assembly Language*, ongoing.

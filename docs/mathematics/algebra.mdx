@@ -1,0 +1,279 @@
+---
+title: Algebra
+sidebar_label: Algebra
+sidebar_position: 1
+description: Semigroups, monoids, groups, rings and fields, the concept hierarchy they induce, and the algorithms that depend on each law.
+---
+
+# Algebra
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts allow the algebraic hierarchy to be stated as a refinement chain rather than as documentation.'},
+    {std: 'C++23', note: 'Extended floating-point types add carriers with distinct rounding behaviour to the same concepts.', paper: 'P1467R9'},
+    {std: 'C++26', note: 'Contracts permit some algebraic preconditions to be checked at runtime where they cannot be checked statically.', paper: 'P2900'},
+  ]}
+/>
+
+## Definition
+
+An algebraic structure is a set with operations satisfying laws. The structures used in this
+reference form a chain, each adding operations or laws to the previous.
+
+<Definition title="The chain">
+A *semigroup* is a set $S$ with an associative binary operation. A *monoid* adds an identity
+element. A *group* adds inverses. An *abelian group* adds commutativity. A *ring* is an
+abelian group under $+$ together with a monoid under $\cdot$, with $\cdot$ distributing over
+$+$. A *field* is a commutative ring in which every non-zero element has a multiplicative
+inverse.
+</Definition>
+
+Written out, for a field $(F, +, \cdot, 0, 1)$:
+
+$$
+\begin{aligned}
+&(x + y) + z = x + (y + z), \quad x + y = y + x, \quad x + 0 = x, \quad x + (-x) = 0, \\
+&(x \cdot y) \cdot z = x \cdot (y \cdot z), \quad x \cdot y = y \cdot x, \quad x \cdot 1 = x, \\
+&x \cdot (y + z) = x \cdot y + x \cdot z, \quad x \neq 0 \Rightarrow x \cdot x^{-1} = 1.
+\end{aligned}
+$$
+
+## Motivation
+
+Each law licenses a specific algorithmic transformation, and the correspondence is exact.
+
+Associativity licenses reassociation, and therefore every divide-and-conquer reduction, every
+tree-structured parallel sum, and every vectorized accumulation with multiple partial sums.
+Without it, the only correct evaluation of $x_1 + x_2 + \cdots + x_n$ is the sequential one.
+
+Commutativity licenses reordering, and therefore work-stealing schedulers, unordered
+reductions over hash containers, and the atomic accumulation of contributions in any order.
+
+An identity licenses the empty case: a reduction over an empty range returns the identity,
+and a parallel decomposition may assign an empty subrange to a worker without special
+handling.
+
+Invertibility licenses cancellation, and therefore sliding-window updates, incremental
+statistics, and prefix-sum-based range queries.
+
+Distributivity licenses factoring, and therefore Horner's rule, strength reduction, and
+Karatsuba-style splitting.
+
+An algorithm is thus not written for a type; it is written for the weakest structure whose
+laws its correctness argument uses. That is the whole content of
+[Generic Programming](/docs/modern-cpp/generic-programming) applied to arithmetic.
+
+## Formal formulation
+
+The structures form a category of concept refinements ordered by inclusion of their model
+classes:
+
+$$
+\mathcal{F}\text{ield} \subset \mathcal{R}\text{ing} \subset \mathcal{A}\text{belianGroup}
+\subset \mathcal{G}\text{roup} \subset \mathcal{M}\text{onoid} \subset \mathcal{S}\text{emigroup}.
+$$
+
+Every field is a ring; not every ring is a field. Correspondingly, an algorithm requiring
+only `Monoid` accepts every model of `Field`, and an algorithm requiring `Field` rejects
+$\mathbb{Z}$.
+
+<Proposition title="Reduction requires exactly a monoid">
+Let $(M, \oplus, e)$ be a monoid and $x_1, \dots, x_n \in M$. Then every parenthesisation of
+$x_1 \oplus \cdots \oplus x_n$ yields the same value, and the value for $n = 0$ is $e$.
+Conversely, if $\oplus$ is not associative there exist $n$ and $x_i$ for which two
+parenthesisations differ. Hence a reduction algorithm that chooses its parenthesisation —
+for parallelism, for vector width, or for cache blocking — is correct precisely on monoids.
+</Proposition>
+
+The proposition is why the standard library specifies `std::reduce` as requiring associativity
+and commutativity, and `std::accumulate` as fixing the order. They are different algorithms
+on different structures, not two spellings of one.
+
+## C++ representation
+
+The chain, stated as a chain:
+
+```cpp
+#include <concepts>
+
+namespace hpc {
+
+template <class T, class Op>
+concept Magma =
+    std::regular<T> &&
+    std::invocable<Op, T, T> &&
+    std::same_as<std::invoke_result_t<Op, T, T>, T>;
+
+// Semantic requirement: op is associative on T.
+template <class T, class Op>
+concept Semigroup = Magma<T, Op>;
+
+// Semantic requirement: additionally, identity() is a two-sided identity.
+template <class T, class Op, class Id>
+concept Monoid =
+    Semigroup<T, Op> &&
+    std::invocable<Id> &&
+    std::same_as<std::invoke_result_t<Id>, T>;
+
+template <class T>
+concept AdditiveMonoid = requires(T x, T y) {
+    { x + y } -> std::same_as<T>;
+    { T{} }   -> std::same_as<T>;
+};
+
+template <class T>
+concept AdditiveGroup = AdditiveMonoid<T> && requires(T x, T y) {
+    { -x }    -> std::same_as<T>;
+    { x - y } -> std::same_as<T>;
+};
+
+template <class T>
+concept Ring = AdditiveGroup<T> && requires(T x, T y) {
+    { x * y } -> std::same_as<T>;
+    { T{1} }  -> std::same_as<T>;
+};
+
+template <class T>
+concept Field = Ring<T> && requires(T x, T y) {
+    { x / y } -> std::same_as<T>;
+};
+
+}  // namespace hpc
+```
+
+The `Magma`/`Semigroup` pair is identical syntactically and distinct semantically; the
+distinction exists to give the associativity requirement a name to be attached to. This is
+the standard situation and the reason semantic requirements are documented as numbered
+obligations rather than as prose.
+
+## Implementation
+
+A reduction written against a monoid, choosing its own parenthesisation:
+
+```cpp
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// Requires: op is associative on T, and identity is a two-sided identity for op.
+// Four accumulators break the sequential dependence chain, which is legitimate
+// only under associativity.
+template <class T, class Op>
+constexpr T reduce(std::span<const T> xs, Op op, T identity) {
+    T a0 = identity, a1 = identity, a2 = identity, a3 = identity;
+    std::size_t i = 0;
+    for (; i + 4 <= xs.size(); i += 4) {
+        a0 = op(a0, xs[i + 0]);
+        a1 = op(a1, xs[i + 1]);
+        a2 = op(a2, xs[i + 2]);
+        a3 = op(a3, xs[i + 3]);
+    }
+    T acc = op(op(a0, a1), op(a2, a3));
+    for (; i < xs.size(); ++i) {
+        acc = op(acc, xs[i]);
+    }
+    return acc;
+}
+
+}  // namespace hpc
+```
+
+Applied to `double` and `operator+`, this computes a different value from the sequential sum,
+because floating-point addition is not associative. The difference is bounded: for the
+sequential sum the standard bound is
+
+$$
+\left| \hat{s}_n - \sum_{i=1}^n x_i \right| \le (n-1) u \sum_{i=1}^n |x_i| + O(u^2),
+$$
+
+while for the $k$-accumulator form the factor $(n-1)$ is replaced by approximately $n/k + k$,
+which is *smaller*. The unrolled form is both faster and more accurate, and neither fact is
+visible from the concept.
+
+Where exactness is required, the structure must be changed rather than the implementation
+tuned:
+
+```cpp
+#include <cmath>
+#include <span>
+
+namespace hpc {
+
+// Neumaier compensated summation: the result is accurate to within 2u
+// independently of n, at the cost of roughly four times the arithmetic.
+constexpr double compensated_sum(std::span<const double> xs) noexcept {
+    double s = 0.0;
+    double c = 0.0;
+    for (const double x : xs) {
+        const double t = s + x;
+        c += (std::abs(s) >= std::abs(x)) ? ((s - t) + x) : ((x - t) + s);
+        s = t;
+    }
+    return s + c;
+}
+
+}  // namespace hpc
+```
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Sequential reduction', time: 'Θ(n)', space: 'Θ(1)', note: 'Latency-bound: n · latency(op)'},
+    {operation: 'k-accumulator reduction', time: 'Θ(n)', space: 'Θ(k)', note: 'Throughput-bound for k ≥ latency/throughput'},
+    {operation: 'Tree reduction, p processors', time: 'Θ(n/p + log p)', space: 'Θ(p)', note: 'Requires associativity'},
+    {operation: 'Compensated summation', time: 'Θ(n), ≈4× flops', space: 'Θ(1)', note: 'Error O(u) independent of n'},
+    {operation: 'Exponentiation by squaring in a monoid', time: 'Θ(log n) ops', space: 'Θ(1)', note: 'Requires associativity only'},
+  ]}
+  unit="n elements, arithmetic model"
+/>
+
+## Performance considerations
+
+The gap between a latency-bound and a throughput-bound reduction is the ratio of the
+operation's latency to its reciprocal throughput — on current hardware, four cycles against
+one half-cycle for floating-point addition, a factor of eight. Recovering it requires
+associativity, and compilers will not assume associativity for floating-point types unless
+told to, since it changes results. This is why `-ffast-math` produces large speed-ups on
+reduction-heavy code and why using it silently changes the error analysis of every reduction
+in the program.
+
+The disciplined alternative is to write the multiple-accumulator form explicitly, as above.
+The transformation is then local, visible, and analysable, and the compiler needs no
+permission to change semantics globally.
+
+Exponentiation by squaring generalises from numbers to any monoid, which is the standard
+example of an algorithm whose value comes from the abstraction: applied to matrices it is
+matrix powering, to permutations it is permutation powering, to a transition operator it is
+Markov chain evolution — one implementation, one correctness argument.
+
+## Limitations
+
+Floating-point types model no algebraic structure exactly. `double` under addition is a
+commutative magma with an identity and approximate inverses; it is not a monoid, and every
+"associativity" claim about it is an approximation with a stated bound.
+
+Integer types with wrapping arithmetic do form rings — $\mathbb{Z}/2^{n}\mathbb{Z}$ for
+unsigned types — but signed overflow is undefined, so signed integers model a ring only on a
+subset of their values, and the subset is not expressible as a concept.
+
+Concepts cannot check laws, so `Ring<T>` is satisfied by types that violate distributivity.
+Property-based testing over generated values is the practical substitute and is treated in
+[Correctness](/docs/formal-cpp/correctness).
+
+## Related entries
+
+[Linear Algebra](/docs/mathematics/linear-algebra) builds on fields;
+[Concepts](/docs/modern-cpp/concepts) supplies the mechanism;
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements) the treatment of the laws;
+[Numerical Analysis](/docs/mathematics/numerical-analysis) the error bounds quoted above.
+
+## References
+
+- A. Stepanov and D. Rose, *From Mathematics to Generic Programming*, Addison-Wesley, 2014.
+- S. Mac Lane and G. Birkhoff, *Algebra*, 3rd ed., AMS Chelsea, 1999.
+- N. J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed., SIAM, 2002,
+  chapter 4, for the summation bounds.
+- A. Neumaier, *Rundungsfehleranalyse einiger Verfahren zur Summation endlicher Summen*,
+  ZAMM 54, 1974.

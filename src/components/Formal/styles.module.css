@@ -1,0 +1,41 @@
+.block {
+  border-left: 2px solid var(--hpc-ink);
+  padding: 0.1rem 0 0.1rem 1.25rem;
+  margin: 1.7rem 0;
+  counter-increment: hpc-formal;
+}
+
+.head {
+  font-family: var(--hpc-sans);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hpc-ink-faint);
+  margin: 0 0 0.4rem;
+}
+
+.kind {
+  font-weight: 600;
+  color: var(--hpc-ink);
+}
+
+.kind::after {
+  content: ' ' counter(hpc-formal);
+  font-variant-numeric: lining-nums;
+}
+
+.title::before {
+  content: ' · ';
+}
+
+.title {
+  letter-spacing: 0.08em;
+}
+
+.body > :last-child {
+  margin-bottom: 0;
+}
+
+.body {
+  font-size: 0.98em;
+}

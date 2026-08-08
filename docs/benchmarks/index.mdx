@@ -1,0 +1,55 @@
+---
+title: Benchmarks
+sidebar_label: Overview
+sidebar_position: 0
+description: Measurement method, machine characterisation, and the results table for the kernels developed in the reference.
+---
+
+# Benchmarks
+
+Performance claims in this reference are either accompanied by the machine, compiler, flags and
+method that produced them, or they are not made. This part holds that apparatus.
+
+## Standing policy
+
+No figure appears in this reference as a measurement unless it was measured on a machine
+described here, with the procedure described in [Method](/docs/benchmarks/method). Figures that
+are predictions from a cost model are labelled as predictions and carry the model that produced
+them.
+
+The distinction matters because the two are used differently. A model prediction says what the
+hardware permits and is the correct target for an implementation; a measurement says what the
+implementation achieved. The interesting number is the ratio, and quoting either alone conceals
+whether an implementation is good.
+
+## Contents
+
+| Entry | Subject |
+| --- | --- |
+| [Method](/docs/benchmarks/method) | Timing protocol, statistics, machine and compiler reporting, the harness |
+| [Machine Model](/docs/benchmarks/machine-model) | Characterising a machine: bandwidth, peak rate, ridge point, cache sizes |
+| [Results](/docs/benchmarks/results) | Recorded measurements, by kernel and machine |
+
+## Current state
+
+No measurements have been recorded in this reference yet. [Results](/docs/benchmarks/results)
+gives the schema each entry must satisfy and the procedure for adding one; until a machine
+description and a run are recorded there, the performance statements elsewhere in the reference
+are model predictions and are labelled as such.
+
+This is stated plainly rather than filled with plausible numbers. A benchmark table whose
+provenance cannot be checked is worse than an empty one, because it will be quoted.
+
+## What is measured
+
+For each kernel, four quantities:
+
+| Quantity | Meaning |
+| --- | --- |
+| Achieved rate | Operations or bytes per second, as appropriate to the kernel's regime |
+| Model bound | The roofline bound for the same kernel on the same machine |
+| Fraction attained | The ratio of the two — the figure that says whether work remains |
+| Scaling | Behaviour across problem size and across cores, not a single point |
+
+A single-size, single-thread number is not a benchmark result; the structure of the curve is what
+carries information, particularly at the cache transitions.

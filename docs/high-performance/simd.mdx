@@ -1,0 +1,246 @@
+---
+title: SIMD
+sidebar_label: SIMD
+sidebar_position: 5
+description: Vector registers and instruction sets, portable abstraction over them, and the operations that determine achievable throughput.
+---
+
+# SIMD
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'No vector type; portable code relies on the auto-vectorizer or on intrinsics behind an abstraction.'},
+    {std: 'C++23', note: 'Unchanged; std::experimental::simd available in some implementations as a technical specification.'},
+    {std: 'C++26', note: 'std::simd standardises a data-parallel type with masking, reductions and permutation.', paper: 'P1928R15'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Data parallelism">
+A SIMD instruction applies one operation to $W$ independent operand pairs held in a vector
+register of $W \cdot s$ bytes, where $s$ is the element size. The *vector width* $W$ is the
+register width divided by the element size, so a 512-bit register holds $W = 8$ doubles or
+$W = 16$ floats.
+</Definition>
+
+Current widths, for orientation:
+
+| Instruction set | Register | $W$ (binary64) | $W$ (binary32) |
+| --- | --- | --- | --- |
+| SSE2 | 128 bit | 2 | 4 |
+| AVX2 | 256 bit | 4 | 8 |
+| AVX-512 | 512 bit | 8 | 16 |
+| NEON | 128 bit | 2 | 4 |
+| SVE / SVE2 | 128–2048 bit, agnostic | 2–32 | 4–64 |
+
+## Motivation
+
+Vector width multiplies arithmetic throughput without any increase in instruction issue rate.
+A core issuing two fused multiply-adds per cycle at $W = 8$ performs 32 double-precision
+operations per cycle; the same core executing scalar code performs 4. The factor of eight is
+available to any kernel whose data parallelism is expressible, and unavailable to any kernel
+whose structure hides it.
+
+The corollary is that vectorization is only useful when the kernel is not already
+bandwidth-bound. A kernel with arithmetic intensity 0.25 flop/byte is limited by memory long
+before its vector units are busy, and vectorizing it changes nothing. Establishing which
+regime applies precedes the work; see
+[Computational Complexity](/docs/high-performance/computational-complexity).
+
+## Formal formulation
+
+A vectorized loop over $n$ elements executes $\lfloor n/W \rfloor$ vector iterations and a
+remainder. With masking, the remainder is one masked iteration; without it, a scalar epilogue
+of up to $W-1$ iterations. The speed-up over the scalar form is
+
+$$
+S = \frac{n}{\lceil n/W \rceil} \le W,
+$$
+
+approaching $W$ for $n \gg W$ and degrading sharply for short loops — at $n = 10$ and $W = 8$,
+two vector iterations do the work of ten scalar ones for a speed-up of 5, and the fixed cost
+of entering and leaving the vector loop may exceed the saving entirely.
+
+Reductions require care because the sequential dependence limits throughput to the latency of
+the operation. With $W$ lanes and $k$ accumulators, the achievable rate is
+
+$$
+\text{rate} = \min\left( \frac{W k}{\lambda},\; W \tau \right)
+$$
+
+operations per cycle, where $\lambda$ is the latency and $\tau$ the reciprocal throughput of
+the arithmetic. For $\lambda = 4$, $\tau = 2$ per cycle, saturation requires $k \ge 8$
+accumulators — a number that is a property of the microarchitecture, not of the algorithm.
+
+A vector reduction also changes the summation order, and hence the value, exactly as discussed
+in [Numerical Analysis](/docs/mathematics/numerical-analysis). The error bound improves from
+$\gamma_{n-1}$ to approximately $\gamma_{n/(Wk) + \log(Wk)}$.
+
+## C++ representation
+
+The portable form, written so that the auto-vectorizer succeeds:
+
+```cpp
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// Unit stride, no aliasing between the spans, trip count known at entry,
+// no calls in the body: the four conditions an auto-vectorizer requires.
+inline void axpy(double alpha, std::span<const double> x,
+                 std::span<double> y) noexcept
+{
+    const std::size_t n = x.size();
+    const double* px = x.data();
+    double* py = y.data();
+    for (std::size_t i = 0; i < n; ++i) {
+        py[i] = alpha * px[i] + py[i];
+    }
+}
+
+}  // namespace hpc
+```
+
+The C++26 form, where the width is a parameter of the type rather than of the target:
+
+```cpp
+#include <cstddef>
+#include <simd>
+#include <span>
+
+namespace hpc {
+
+// Width chosen by the implementation for the target; the remainder is
+// handled by a masked load and store rather than a scalar epilogue.
+inline double dot_simd(std::span<const double> x, std::span<const double> y) noexcept {
+    using vec = std::simd<double>;
+    constexpr std::size_t W = vec::size();
+
+    vec acc0{}, acc1{};
+    std::size_t i = 0;
+    for (; i + 2 * W <= x.size(); i += 2 * W) {
+        acc0 = acc0 + vec{&x[i], std::element_aligned} * vec{&y[i], std::element_aligned};
+        acc1 = acc1 + vec{&x[i + W], std::element_aligned} *
+                      vec{&y[i + W], std::element_aligned};
+    }
+
+    double acc = std::reduce(acc0 + acc1);
+    for (; i < x.size(); ++i) { acc += x[i] * y[i]; }
+    return acc;
+}
+
+}  // namespace hpc
+```
+
+Where the standard type is unavailable, intrinsics are confined behind a thin per-ISA
+abstraction so that the kernel is written once:
+
+```cpp
+namespace hpc::detail {
+
+// One header per instruction set, one type name, one set of operations.
+// Kernels include this and never an intrinsic header directly.
+struct vector_traits;   // width, load, store, fma, reduce
+
+}  // namespace hpc::detail
+```
+
+## Implementation
+
+Four conditions must hold for a loop to vectorize, and each has a standard remedy.
+
+Unit stride: strided or indexed access compiles to a gather, which is several times slower
+than a contiguous load. The remedy is layout — see
+[Data Layout](/docs/high-performance/data-layout).
+
+Absence of aliasing: the compiler must know that the output does not overlap the input.
+Distinct `span` parameters do not establish this; the remedies are `__restrict` where
+available, copying into locals, or a runtime overlap check that selects between a vectorized
+and a scalar path.
+
+Known trip count: a loop whose exit condition depends on the data cannot be vectorized without
+masking. `while (p != end && *p != 0)` is not vectorizable; a two-pass formulation that first
+finds the length is.
+
+No calls: a call in the body blocks vectorization unless it is inlined or has a vector variant.
+Marking small mathematical helpers `inline constexpr` and keeping them free of branches is
+usually sufficient.
+
+Verification is by inspection of the generated assembly or of the compiler's optimisation
+report, never by assumption. The reports named in [Benchmarks](/docs/benchmarks) —
+`-fopt-info-vec-missed` for GCC, `-Rpass-analysis=loop-vectorize` for Clang — state which
+loops vectorized and why the others did not.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Scalar loop, n elements', time: 'n · τ cycles', space: 'Θ(1)', note: 'τ = reciprocal throughput'},
+    {operation: 'Vectorized loop, width W', time: '⌈n/W⌉ · τ cycles', space: 'Θ(1)', note: 'Speed-up → W for n ≫ W'},
+    {operation: 'Reduction, 1 accumulator', time: 'n · λ / W cycles', space: 'Θ(1)', note: 'Latency-bound'},
+    {operation: 'Reduction, k accumulators', time: 'n · τ / W cycles for k ≥ λ/τ', space: 'Θ(k)', note: 'Throughput-bound'},
+    {operation: 'Gather of W elements', time: '≈ W · L1 latency', space: 'Θ(1)', note: 'Rarely faster than scalar'},
+    {operation: 'Masked operation', time: 'Same as unmasked', space: 'Θ(1)', note: 'Both sides of a branch executed'},
+  ]}
+  unit="per core, arithmetic model"
+/>
+
+## Performance considerations
+
+Vectorization is worthwhile precisely when the kernel is compute-bound. On a bandwidth-bound
+kernel the vector units wait on memory and the measured speed-up is close to one; this is the
+most common disappointment in SIMD work and it is predicted in advance by the roofline
+calculation.
+
+Wider registers are not uniformly better. On several implementations, sustained AVX-512
+execution reduces the core's clock frequency, so a kernel gaining 1.5× from width and losing
+1.2× from frequency nets little. The measurement must be end-to-end, at the frequency the
+application actually sustains.
+
+Divergent control flow is executed on both sides under masking, so a branch taken by half the
+lanes costs the sum of both paths. Where divergence is high, sorting or partitioning the data
+so that lanes agree recovers most of the loss.
+
+Alignment affects loads less than it used to and stores more. Aligning to the register width
+is nearly free at allocation and removes split-line penalties in store-heavy kernels.
+
+Horizontal operations — reductions across lanes, shuffles — are far more expensive than
+vertical ones. A well-structured vector loop keeps values in lanes throughout and reduces once
+at the end.
+
+## Limitations
+
+Portable vector code did not exist in the standard before C++26, and code written against
+intrinsics is tied to an instruction set. The abstraction layer that fixes this must be
+written and maintained, and it constrains the kernel to the intersection of the operations
+available everywhere.
+
+The auto-vectorizer is opportunistic and its decisions change between compiler versions. A
+kernel that vectorizes today may not after an upgrade, so vectorization status is checked in
+the build rather than assumed — by an optimisation-report check or by a performance regression
+test.
+
+Reassociation changes results, and a vectorized reduction is a reassociated reduction. Where
+bitwise reproducibility across machines with different vector widths is required — and in
+regulated numerical work it sometimes is — vectorized reductions are excluded, or a fixed
+reduction tree independent of the hardware width is used.
+
+Scalable vector extensions (SVE, RVV) have no compile-time width, so code written around a
+constant `W` does not port to them without change.
+
+## Related entries
+
+[Vectorization](/docs/high-performance/vectorization) develops the loop-level transformations;
+[Data Layout](/docs/high-performance/data-layout) the prerequisite;
+[Numerical Analysis](/docs/mathematics/numerical-analysis) the reassociation question;
+[GPU Computing](/docs/high-performance/gpu-computing) the same idea at a larger width.
+
+## References
+
+- M. Kretz, *Extending C++ for Explicit Data-Parallel Programming*, PhD thesis, 2015, and
+  P1928R15.
+- Intel, *Intel 64 and IA-32 Architectures Optimization Reference Manual*.
+- Arm, *Arm Architecture Reference Manual*, SVE chapters.
+- A. Fog, *Optimizing Software in C++* and *Instruction Tables*, ongoing.

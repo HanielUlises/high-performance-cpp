@@ -1,0 +1,238 @@
+---
+title: Standard Library
+sidebar_label: Standard Library
+sidebar_position: 9
+description: Ranges, views, algorithms, mdspan and allocators as they bear on numerical and performance-oriented code.
+---
+
+# Standard Library
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Ranges and views, constrained algorithms, std::span, std::bit_cast, std::atomic_ref, jthread and stop tokens.'},
+    {std: 'C++23', note: 'std::mdspan, std::flat_map, std::expected, ranges::to, zip and enumerate views, constexpr <cmath> in part.', paper: 'P0009R18'},
+    {std: 'C++26', note: 'std::simd, std::linalg (a BLAS interface over mdspan), senders and receivers, std::inplace_vector.', paper: 'P1928, P1673, P2300'},
+  ]}
+/>
+
+## Definition
+
+The standard library is treated here as three separable things: a set of concepts describing
+sequences and callables, a set of algorithms constrained by them, and a set of concrete
+components. The first two are the reusable part for numerical work; the third is used
+selectively.
+
+<Definition title="Range">
+A range is a type $R$ for which `ranges::begin(r)` and `ranges::end(r)` are valid and denote
+an iterator and a sentinel of matching types. Refinements add capabilities:
+$$
+\mathrm{contiguous} \Rightarrow \mathrm{random\_access} \Rightarrow \mathrm{bidirectional} \Rightarrow \mathrm{forward} \Rightarrow \mathrm{input}.
+$$
+A *view* is a range that is cheaply copyable and does not own its elements, so that
+composition of views costs nothing beyond the composition itself.
+</Definition>
+
+## Motivation
+
+Numerical code needs three things from a library of this kind: a way to describe a region of
+memory without owning it, a way to describe multidimensional structure over such a region,
+and a set of algorithms that do not force a copy.
+
+`std::span` supplies the first. It is the correct parameter type for a kernel: it accepts a
+`vector`, an array, a sub-range of either, and pinned or device-mapped memory, without a
+template parameter and without an allocation, and it collapses every caller onto one
+instantiation.
+
+`std::mdspan` supplies the second, and is the more consequential addition. It separates the
+storage from the index mapping, so that row-major, column-major, strided, tiled and padded
+layouts are the same type template with different layout policies. A kernel written against
+`mdspan` is written once for all of them, and the layout is a compile-time parameter that
+propagates into the addressing arithmetic.
+
+Ranges supply the third, with a qualification developed below.
+
+## Formal formulation
+
+An `mdspan` is a triple: a pointer $p$, an extents object $E = (e_0, \dots, e_{r-1})$, and a
+layout mapping
+
+$$
+\mathcal{M} : \prod_{k=0}^{r-1} \{0, \dots, e_k - 1\} \to \mathbb{N},
+$$
+
+with element access $A(i_0,\dots,i_{r-1}) = p[\mathcal{M}(i_0,\dots,i_{r-1})]$. The standard
+layouts are
+
+$$
+\mathcal{M}_{\text{right}}(\mathbf{i}) = \sum_{k} i_k \prod_{j > k} e_j, \qquad
+\mathcal{M}_{\text{left}}(\mathbf{i}) = \sum_{k} i_k \prod_{j < k} e_j,
+$$
+
+and `layout_stride` takes the strides as data. A mapping is *unique* when it is injective,
+*exhaustive* when its image is a contiguous range, and *strided* when it is affine in each
+index; the three properties are what allow an algorithm to decide whether it may treat the
+underlying storage as a flat array.
+
+Views compose as functions on sequences. A view $v$ applied to a range $r$ denotes a
+sequence, and the composition $v_2 \circ v_1$ is materialised lazily, element by element, so
+that
+
+$$
+\text{cost}(v_2 \circ v_1) = \Theta(n \cdot (c_1 + c_2)), \qquad \text{space } \Theta(1),
+$$
+
+against $\Theta(n)$ additional space for the eager equivalent.
+
+## C++ representation
+
+A kernel written against `span` and `mdspan`, with the layout as a parameter:
+
+```cpp
+#include <cstddef>
+#include <mdspan>
+#include <span>
+
+namespace hpc {
+
+// y ← αAx + y, for any layout the mapping supports.
+template <class Layout>
+void gemv(double alpha,
+          std::mdspan<const double, std::dextents<std::size_t, 2>, Layout> A,
+          std::span<const double> x,
+          std::span<double> y) noexcept
+{
+    for (std::size_t i = 0; i < A.extent(0); ++i) {
+        double acc = 0.0;
+        for (std::size_t j = 0; j < A.extent(1); ++j) {
+            acc += A[i, j] * x[j];
+        }
+        y[i] += alpha * acc;
+    }
+}
+
+}  // namespace hpc
+```
+
+The loop order above is correct for `layout_right` and wrong for `layout_left`, where it
+strides through memory. The interface is layout-generic; the *implementation* is not, and
+the resolution is to dispatch on the layout rather than to pretend it does not matter:
+
+```cpp
+#include <concepts>
+#include <mdspan>
+
+namespace hpc {
+
+template <class A>
+concept RowMajorMatrix =
+    std::same_as<typename A::layout_type, std::layout_right> && A::rank() == 2;
+
+template <class A>
+concept ColumnMajorMatrix =
+    std::same_as<typename A::layout_type, std::layout_left> && A::rank() == 2;
+
+}  // namespace hpc
+```
+
+Views, applied where they earn their cost:
+
+```cpp
+#include <ranges>
+#include <span>
+
+namespace hpc {
+
+// The diagonal of a row-major n × n matrix, without a copy.
+constexpr auto diagonal(std::span<const double> a, std::size_t n) {
+    return std::views::iota(std::size_t{0}, n) |
+           std::views::transform([a, n](std::size_t i) { return a[i * n + i]; });
+}
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Three rules govern the use of the library in this reference.
+
+Kernels take `span` and `mdspan`, never containers. A kernel parameterised on a container
+type instantiates once per caller, forces ownership decisions on the caller, and cannot be
+called on a sub-block. `span` and `mdspan` have neither problem.
+
+Ranges algorithms are used for structure and control, not for inner loops over numerical
+data. `ranges::sort`, `ranges::partition` and the searching algorithms are used directly. A
+reduction over a `transform_view` in a hot loop is written explicitly instead, for the reason
+given below.
+
+Allocators are used where alignment or placement matters. Over-aligned allocation for vector
+loads and per-NUMA-node placement are both allocator concerns, and both are expressible with
+`std::pmr::memory_resource` or a stateful allocator without changing the kernel interface.
+
+The residual libraries used are `<bit>` for representation manipulation (`bit_cast`,
+`countl_zero`, `has_single_bit`), `<numeric>` for `midpoint` and the scan algorithms,
+`<atomic>` for `atomic_ref`, and `<charconv>` for parsing without locale dependence.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'span construction from a container', time: 'Θ(1)', space: 'Θ(1)', note: 'Pointer and length'},
+    {operation: 'mdspan element access, layout_right', time: 'Θ(rank)', space: 'Θ(1)', note: 'Strength-reduced to an add in a loop nest'},
+    {operation: 'mdspan submdspan', time: 'Θ(rank)', space: 'Θ(1)', note: 'No copy'},
+    {operation: 'views composition, depth d, n elements', time: 'Θ(n · d)', space: 'Θ(1)', note: 'Lazy; no materialisation'},
+    {operation: 'ranges::to<vector> on the same pipeline', time: 'Θ(n · d)', space: 'Θ(n)', note: 'One allocation'},
+    {operation: 'ranges::sort', time: 'Θ(n log n)', space: 'Θ(log n)', note: 'Comparisons; introsort'},
+  ]}
+/>
+
+## Performance considerations
+
+`mdspan` addressing is not free in the general case. For `layout_right` with static extents
+the mapping folds into constant offsets and induction variables; for `layout_stride` with
+dynamic strides it is a multiply per index per access, and the compiler will hoist it out of
+the innermost loop only if it can prove the strides invariant. Passing static extents where
+they are known, and constraining kernels on the layout type, is what keeps the addressing at
+the level of a hand-written index computation.
+
+View pipelines vectorize unreliably. A `transform_view` over contiguous data usually
+vectorizes; a `filter_view` never does, because the trip count is data-dependent; and a deep
+pipeline may exceed inlining budgets, at which point every element access becomes a call.
+Numerical inner loops in this reference are therefore written as explicit loops over `span`,
+and views are used at the level of structure — iterating blocks, rows, or non-zero patterns —
+where the per-element cost is amortised.
+
+`std::span<const double>` as a parameter type is also an aliasing statement of a weak kind:
+it does not assert non-overlap, and a kernel with output and input spans must either document
+disjointness as a precondition or check it.
+
+## Limitations
+
+The standard library provides no vector type with linear-algebra semantics; `std::valarray`
+is a historical artefact with unspecified aliasing behaviour and is not used here.
+`std::linalg` in C++26 supplies BLAS operations over `mdspan` but not a general expression
+system.
+
+`std::simd` arrives in C++26; before it, portable vectorization is left to the optimiser or
+to intrinsics. See [SIMD](/docs/high-performance/simd).
+
+Ranges views have no notion of complexity guarantees on composition, and no way to express
+that an algorithm requires contiguous storage without also excluding views that could supply
+it. `ranges::data` is the practical test.
+
+Standard containers offer no control over growth policy or over the alignment of their
+storage without a custom allocator, and `std::vector<bool>` remains a specialisation whose
+element access is not a reference.
+
+## Related entries
+
+[Data Layout](/docs/high-performance/data-layout) develops the layout question `mdspan`
+parameterises; [Generic Programming](/docs/modern-cpp/generic-programming) the discipline the
+range concepts embody; [Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra)
+the algorithms these interfaces carry.
+
+## References
+
+- ISO/IEC 14882, clauses on ranges, algorithms, and multidimensional access.
+- E. Niebler, C. Carter and C. Di Bella, *The One Ranges Proposal*, P0896R4.
+- C. Trott et al., *mdspan: a non-owning multidimensional array reference*, P0009R18.
+- M. Hoemmen et al., *A free function linear algebra interface based on the BLAS*, P1673R13.

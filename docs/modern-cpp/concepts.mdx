@@ -1,0 +1,275 @@
+---
+title: Concepts
+sidebar_label: Concepts
+sidebar_position: 4
+description: Named predicates over types and values, their evaluation, and what they do and do not assert.
+---
+
+# Concepts
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts introduced: concept definitions, requires-expressions, requires-clauses, constrained placeholders.', paper: 'P0734R0'},
+    {std: 'C++23', note: 'Current evolution: standard-library concepts extended, deducing this interacts with constrained members.'},
+    {std: 'C++26', note: 'Reflection permits concept satisfaction to be queried and requirements generated programmatically.', paper: 'P2996'},
+  ]}
+/>
+
+## Definition
+
+A concept is a named predicate over template arguments, evaluated during translation.
+
+<Definition title="Concept">
+A concept $C$ of one type parameter is a total function
+$$
+C : \mathcal{T} \to \{\mathrm{true}, \mathrm{false}\}
+$$
+from the set of types to the booleans, evaluated at translation time. It is built from
+atomic constraints by conjunction, disjunction and parameter mapping, so that in general
+$$
+C(T) \iff P_1(T) \land P_2(T) \land \cdots \land P_n(T),
+$$
+each $P_i$ being either an atomic constraint or a further concept. Concepts of several
+parameters are predicates on tuples, $C : \mathcal{T}^k \to \{\mathrm{true},\mathrm{false}\}$.
+</Definition>
+
+A concept therefore *denotes a set of types*: the preimage
+
+$$
+\mathcal{C} = C^{-1}(\mathrm{true}) = \{\, T \in \mathcal{T} : C(T) \,\}.
+$$
+
+Reasoning about concepts is reasoning about these sets and their inclusions.
+
+## Motivation
+
+Before C++20 a template's domain was implicit. The requirements existed — an algorithm using
+`*it` and `++it` requires both — but were recoverable only by reading the body or by
+provoking an error. Three consequences followed: diagnostics reported the first failing
+expression at the bottom of an instantiation stack rather than the unsatisfied requirement
+at the top; overloads could not be ordered by specificity of requirements, so libraries
+simulated the ordering with tag dispatch and enable_if; and the interface documented nothing
+that the compiler enforced.
+
+Concepts address all three by making the domain a first-class part of the declaration.
+Checking happens at the call, before instantiation; overload resolution consults the
+requirements directly through subsumption; and the declaration states the domain.
+
+## Formal formulation
+
+Concept satisfaction is decided by *normalisation* into a conjunction and disjunction of
+atomic constraints, followed by evaluation of each atom. Normalisation substitutes concept
+names by their definitions, recursively, producing a normal form built only from atoms:
+
+$$
+\mathrm{norm}(C) = \bigvee_{i} \bigwedge_{j} A_{ij}.
+$$
+
+Evaluation is short-circuiting from left to right: for $C_1 \land C_2$, if $C_1$ is not
+satisfied then $C_2$ is not evaluated. This is why an ill-formed second operand is harmless
+when the first fails, and why ordering the cheap and discriminating requirement first is
+both a compile-time optimisation and a defence against hard errors.
+
+The set-theoretic reading makes refinement precise. $C_1$ *refines* $C_2$ when
+
+$$
+\mathcal{C}_1 \subseteq \mathcal{C}_2, \quad\text{equivalently}\quad \forall T.\; C_1(T) \Rightarrow C_2(T).
+$$
+
+The language approximates this relation syntactically by subsumption, which is decidable;
+the approximation and its consequences are the subject of
+[Constraints](/docs/modern-cpp/constraints).
+
+## C++ representation
+
+A `requires`-expression is a boolean expression whose value is whether its requirements are
+well-formed:
+
+```cpp
+#include <concepts>
+
+namespace hpc {
+
+template <class T>
+concept Additive = requires(T x, T y) {
+    { x + y } -> std::same_as<T>;
+};
+
+template <class T>
+concept AdditiveGroup =
+    Additive<T> &&
+    std::regular<T> &&
+    requires(T x, T y) {
+        { -x }     -> std::same_as<T>;
+        { x - y }  -> std::same_as<T>;
+        { T{} }    -> std::same_as<T>;   // the additive identity
+    };
+
+template <class T>
+concept Ring =
+    AdditiveGroup<T> &&
+    requires(T x, T y) {
+        { x * y } -> std::same_as<T>;
+        { T{1} }  -> std::same_as<T>;    // the multiplicative identity
+    };
+
+template <class T>
+concept Field =
+    Ring<T> &&
+    requires(T x, T y) {
+        { x / y } -> std::same_as<T>;
+    };
+
+}  // namespace hpc
+```
+
+The four concepts form a chain of refinements, $\mathrm{Field} \Rightarrow \mathrm{Ring}
+\Rightarrow \mathrm{AdditiveGroup} \Rightarrow \mathrm{Additive}$, mirroring the inclusion
+of the corresponding algebraic categories.
+
+The four kinds of requirement are used as follows:
+
+```cpp
+#include <concepts>
+#include <cstddef>
+#include <type_traits>
+
+namespace hpc {
+
+template <class T>
+concept Vectorizable = requires(T x, T* p, std::size_t i) {
+    typename T::value_type;                       // type requirement
+    x.stride();                                   // simple requirement
+    { x[i] } noexcept -> std::convertible_to<double>;  // compound requirement
+    requires std::is_trivially_copyable_v<T>;     // nested requirement
+};
+
+}  // namespace hpc
+```
+
+A compound requirement `{ e } -> C` asserts that `e` is well-formed and that
+`C<decltype((e))>` is satisfied; the double parentheses matter, since they preserve value
+category.
+
+## Implementation
+
+Concepts constrain declarations in four interchangeable syntaxes:
+
+```cpp
+template <hpc::Field F> F reciprocal(F x);                 // constrained parameter
+template <class F> requires hpc::Field<F> F reciprocal(F); // requires-clause
+template <class F> F reciprocal(F x) requires hpc::Field<F>;  // trailing clause
+hpc::Field auto reciprocal(hpc::Field auto x);             // abbreviated template
+```
+
+The forms are equivalent for satisfaction, and the trailing clause is the only one that can
+mention the function's own parameters' types after deduction.
+
+Constraints participate in overload resolution, allowing algorithm selection by capability
+without tags:
+
+```cpp
+#include <iterator>
+#include <ranges>
+
+namespace hpc {
+
+// Selected for any input range.
+template <std::ranges::input_range R>
+constexpr auto count_elements(R&& r) -> std::ranges::range_difference_t<R> {
+    std::ranges::range_difference_t<R> n{};
+    for (auto it = std::ranges::begin(r); it != std::ranges::end(r); ++it) { ++n; }
+    return n;
+}
+
+// Preferred wherever it applies: its constraints subsume the above.
+template <std::ranges::sized_range R>
+constexpr auto count_elements(R&& r) -> std::ranges::range_difference_t<R> {
+    return static_cast<std::ranges::range_difference_t<R>>(std::ranges::size(r));
+}
+
+}  // namespace hpc
+```
+
+No tie-breaking mechanism is needed: `sized_range` subsumes `input_range` in the normalised
+form, so the second overload is more constrained and wins.
+
+A concept can also be used as a predicate in ordinary compile-time code, since it is an
+expression:
+
+```cpp
+static_assert(hpc::Field<double>);
+static_assert(!hpc::Field<int>);   // integers have no multiplicative inverse
+```
+
+The second assertion is the concept doing its work: `int` supports `/`, but division on
+`int` is not the field operation, and a `Field` concept that admitted `int` would license an
+algorithm to divide and expect exactness. Whether `int` is excluded depends on the
+requirements chosen, and choosing them so that the exclusion is automatic is the design
+problem.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Normalise a concept of depth d', time: 'Θ(size of expansion)', space: 'Θ(size of expansion)', note: 'Performed once per constraint expression'},
+    {operation: 'Check satisfaction, k atoms', time: 'O(k)', space: 'O(1)', note: 'Short-circuited; results memoised per argument tuple'},
+    {operation: 'Subsumption test between two constraints', time: 'Exponential in the worst case', space: '—', note: 'Disjunctive normal form comparison'},
+  ]}
+  unit="translation"
+/>
+
+The exponential worst case for subsumption is reachable only by deeply nested disjunctions;
+constraint sets written as conjunctions of named concepts, which is the recommended style,
+stay linear in practice.
+
+## Performance considerations
+
+Concepts have no runtime representation. Satisfaction is decided during translation, and
+the generated code for a constrained template is identical to that of the unconstrained
+template it replaces.
+
+The build-time effect is usually favourable. Checking a constraint is far cheaper than
+instantiating the body that would have failed, and a constrained overload set rejects
+candidates before substituting into their signatures. The exception is a large set of
+overloads distinguished only by expensive atomic constraints, where every call site pays for
+every atom.
+
+Where concepts do influence generated code is through the selection they make. The
+`sized_range` overload above is $\Theta(1)$ rather than $\Theta(n)$, and the choice was made
+by the constraint system rather than by the caller.
+
+## Limitations
+
+A concept constrains syntax. `Ring<T>` as defined above is satisfied by any type with the
+right operations, whether or not multiplication distributes over addition or addition is
+associative. The laws are the reason the concept is called `Ring`, and nothing checks them.
+Types satisfying the syntax and violating the laws produce silently wrong results in
+algorithms that rely on them — floating-point addition, which is not associative, is the
+standing example.
+
+Concepts cannot express complexity requirements. `std::random_access_iterator` requires that
+`i + n` compile, not that it be constant time; the complexity requirement is normative prose
+in the standard and unchecked.
+
+Satisfaction is not a stable property of a type under all circumstances: it depends on the
+declarations visible at the point of checking, so a concept can be satisfied in one
+translation unit and not in another, with no diagnostic required. Discipline about where
+operations are declared is the only defence.
+
+Finally, concepts do not check the body. A template constrained by `Field<F>` that
+nonetheless calls `std::sqrt` on `F` compiles until instantiated.
+
+## Related entries
+
+[Constraints](/docs/modern-cpp/constraints) treats normalisation and subsumption;
+[Concepts as Predicates](/docs/formal-cpp/concepts-as-predicates) the predicate reading;
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements) the laws that concepts
+cannot state; [Algebra](/docs/mathematics/algebra) the structures encoded above.
+
+## References
+
+- ISO/IEC 14882, clauses on constraints and concepts.
+- A. Sutton, B. Stroustrup and G. Dos Reis, *Concepts: Constraining Templates with
+  Predicates*, N3580.
+- B. Stroustrup, *Concepts: The Future of Generic Programming*, P0557R1.

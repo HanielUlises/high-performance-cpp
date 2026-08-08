@@ -1,0 +1,237 @@
+---
+title: Cache Locality
+sidebar_label: Cache Locality
+sidebar_position: 3
+description: Transfer counts, blocking, loop transformations, and the cache-oblivious alternative.
+---
+
+# Cache Locality
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'std::hardware_constructive_interference_size names the granularity blocking targets.'},
+    {std: 'C++23', note: 'std::mdspan with layout policies makes tiled layouts expressible without changing kernel code.', paper: 'P0009R18'},
+    {std: 'C++26', note: 'std::linalg exposes blocked implementations behind a standard interface.', paper: 'P1673R13'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Locality">
+An access sequence has *temporal locality* when an address accessed at time $t$ is accessed
+again within a window short enough that the line survives in cache, and *spatial locality*
+when addresses accessed near in time lie within the same line. The *reuse distance* of an
+access is the number of distinct lines accessed since the previous access to the same line; a
+line survives when its reuse distance is below the cache's capacity in lines.
+</Definition>
+
+Blocking is the systematic reduction of reuse distance by restructuring a loop nest so that
+the working set of the inner loops fits in a chosen level of cache.
+
+## Motivation
+
+Consider the three-loop matrix multiplication $C \mathrel{+}= AB$ for $n \times n$ matrices
+with $n^2 \gg M$. In the natural loop order, the innermost loop streams a row of $A$ and a
+column of $B$ per output element; the column has stride $n$, so every access to $B$ fetches a
+full line and uses one word of it. The transfer count is $\Theta(n^3)$ — one line per
+multiply-add — and the kernel runs at memory bandwidth.
+
+Blocking into $b \times b$ tiles with $3b^2 \le M$ changes this. Each pair of tiles is loaded
+once and participates in $\Theta(b^3)$ operations, so
+
+$$
+Q(n) = \Theta\!\left( \frac{n^3}{b} \cdot \frac{1}{B} \right)
+= \Theta\!\left( \frac{n^3}{B\sqrt{M}} \right),
+$$
+
+matching the Hong–Kung lower bound. The operation count is unchanged; the transfer count falls
+by a factor of $\sqrt{M}$, which for a 1 MB L2 and 8-byte elements is a factor of about 200.
+
+## Formal formulation
+
+For a cache of $M$ words with lines of $B$ words, fully associative with optimal replacement,
+the tight bounds for the standard kernels are
+
+$$
+\begin{aligned}
+Q_{\text{scan}}(n) &= \Theta(n/B), \\
+Q_{\text{transpose}}(n) &= \Theta(n^2/B), \\
+Q_{\text{matmul}}(n) &= \Theta\!\left(\frac{n^3}{B\sqrt{M}}\right), \\
+Q_{\text{sort}}(n) &= \Theta\!\left(\frac{n}{B}\log_{M/B}\frac{n}{B}\right).
+\end{aligned}
+$$
+
+The choice of block size follows from the capacity constraint. For three tiles resident,
+
+$$
+3b^2 \cdot \mathrm{sizeof}(T) \le M \quad\Longrightarrow\quad
+b \le \sqrt{\frac{M}{3\,\mathrm{sizeof}(T)}},
+$$
+
+giving $b \approx 209$ for $M = 1$ MB and 8-byte elements — in practice reduced to leave room
+for the output tile in registers, associativity effects, and the other data the loop touches.
+
+The cache-oblivious alternative avoids naming $M$ and $B$ at all. Recursive subdivision of the
+problem produces subproblems of every size, so at some level of the recursion the subproblem
+fits any given cache, and the transfer count matches the blocked bound to within a constant
+factor for *every* level of the hierarchy simultaneously.
+
+## C++ representation
+
+The blocked form, with the block sizes as template parameters so that they become constants:
+
+```cpp
+#include <algorithm>
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// C ← C + A B, blocked for a cache holding three MC × KC tiles.
+template <std::size_t MC = 96, std::size_t NC = 96, std::size_t KC = 256>
+void gemm_blocked(std::mdspan<const double, std::dextents<std::size_t, 2>> A,
+                  std::mdspan<const double, std::dextents<std::size_t, 2>> B,
+                  std::mdspan<double, std::dextents<std::size_t, 2>> C) noexcept
+{
+    const std::size_t M = C.extent(0);
+    const std::size_t N = C.extent(1);
+    const std::size_t K = A.extent(1);
+
+    for (std::size_t jc = 0; jc < N; jc += NC) {
+        const std::size_t jn = std::min(NC, N - jc);
+        for (std::size_t pc = 0; pc < K; pc += KC) {
+            const std::size_t pk = std::min(KC, K - pc);
+            for (std::size_t ic = 0; ic < M; ic += MC) {
+                const std::size_t im = std::min(MC, M - ic);
+
+                // Micro-kernel over one resident tile triple.
+                for (std::size_t i = 0; i < im; ++i) {
+                    for (std::size_t p = 0; p < pk; ++p) {
+                        const double a = A[ic + i, pc + p];
+                        for (std::size_t j = 0; j < jn; ++j) {
+                            C[ic + i, jc + j] += a * B[pc + p, jc + j];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+}  // namespace hpc
+```
+
+The innermost loop runs over contiguous `j` in both `B` and `C`, so both stream; `a` is
+invariant in that loop and is kept in a register. This ordering — `i, p, j` rather than
+`i, j, p` — is the loop interchange that makes the kernel vectorizable, and it is a
+correctness-preserving transformation only because floating-point addition is being
+reassociated across `p`, which the accumulation into `C` already commits to.
+
+The cache-oblivious form, requiring no parameters:
+
+```cpp
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// Recursive halving along the largest extent. Transfers are within a constant
+// factor of optimal for every cache level simultaneously.
+void gemm_recursive(std::mdspan<const double, std::dextents<std::size_t, 2>> A,
+                    std::mdspan<const double, std::dextents<std::size_t, 2>> B,
+                    std::mdspan<double, std::dextents<std::size_t, 2>> C,
+                    std::size_t base = 64) noexcept;
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Blocking parameters are chosen by measurement, constrained by the capacity computation above.
+The starting values used in this reference are: an innermost register tile of $8 \times 4$
+scalars for AVX-512 with 32 vector registers, an L1 tile of roughly $96 \times 256$, and an
+L2 tile of roughly $384 \times 256$, with the exact values determined per machine and recorded
+with the benchmark.
+
+Padding is applied when a leading dimension is a power of two. With a 16-way associative cache
+of 32 KB and 64-byte lines, addresses separated by 2 KB map to the same set; a $512 \times
+512$ matrix of doubles has a row stride of exactly 4 KB, so the columns of a tile all collide
+and the effective associativity collapses. Padding the leading dimension by one line — 8
+doubles — removes the conflict entirely and costs $O(n)$ memory.
+
+Loop fusion is applied where two passes over the same data are separated only by an
+intermediate. Computing $z = \alpha x + \beta y$ then $s = \langle z, z \rangle$ as two loops
+moves $3n$ words twice; fusing them moves $2n$ once. The transformation is the runtime
+analogue of the expression templates in
+[Metaprogramming](/docs/modern-cpp/metaprogramming).
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Naive n × n matrix multiply', time: '2n³ flops', space: 'Θ(1)', note: 'Θ(n³/B) transfers; intensity O(1)'},
+    {operation: 'Blocked, tile b, 3b² ≤ M', time: '2n³ flops', space: 'Θ(b²)', note: 'Θ(n³/(B√M)) transfers; intensity Θ(b)'},
+    {operation: 'Cache-oblivious recursive', time: '2n³ flops', space: 'Θ(log n) stack', note: 'Θ(n³/(B√M)) transfers, all levels'},
+    {operation: 'Transpose, naive', time: 'Θ(n²)', space: 'Θ(1)', note: 'Θ(n²) transfers: one line per element'},
+    {operation: 'Transpose, blocked', time: 'Θ(n²)', space: 'Θ(b²)', note: 'Θ(n²/B) transfers: optimal'},
+    {operation: 'Two-pass axpy + dot', time: 'Θ(n)', space: 'Θ(n)', note: '5n words moved'},
+    {operation: 'Fused axpy + dot', time: 'Θ(n)', space: 'Θ(1)', note: '2n words moved'},
+  ]}
+  unit="external memory (M, B)"
+/>
+
+## Performance considerations
+
+The gap between the naive and blocked matrix multiplication on current hardware is a factor of
+ten to thirty at $n = 2048$, and it is entirely a transfer-count effect: the instruction counts
+are within a few percent of each other.
+
+Cache-oblivious algorithms achieve the same asymptotic transfer count with no tuning, at the
+cost of recursion overhead near the leaves and a loss of the register-level scheduling that a
+hand-written micro-kernel provides. In practice they reach 60–80 percent of a tuned blocked
+implementation and are preferable when the target machine is unknown or the hierarchy has more
+levels than the tuning accounts for.
+
+Associativity conflicts are the most common cause of a blocked kernel underperforming its
+model. The diagnostic is a sharp performance drop at power-of-two sizes with normal behaviour
+at nearby sizes, and the fix is padding.
+
+Prefetching interacts with blocking: a tile traversal that walks contiguous memory within a
+tile and jumps between tiles gives the hardware prefetcher streams it can follow, whereas a
+traversal that touches one element per line in a scattered order defeats it entirely.
+
+## Limitations
+
+The ideal-cache model assumes full associativity and optimal replacement. Real caches
+approximate LRU within a set, and the difference is the conflict-miss behaviour above, which
+the model does not predict.
+
+Blocking parameters are machine-specific and do not transfer between microarchitectures.
+A kernel tuned for one cache configuration may be substantially off on another, which is the
+motivation for autotuning and for the cache-oblivious approach.
+
+Blocking a loop nest requires that the transformation be legal, and for loop nests with
+dependences it may not be. Establishing legality is a dependence-analysis problem, and where
+the dependence is through floating-point accumulation the transformation is legal only under
+the reassociation licence discussed in [Numerical Analysis](/docs/mathematics/numerical-analysis).
+
+Shared caches make locality a property of the *set* of threads running, not of one kernel.
+Two threads each with a working set fitting L3 individually may thrash when co-scheduled.
+
+## Related entries
+
+[Memory](/docs/high-performance/memory) for the hierarchy;
+[Data Layout](/docs/high-performance/data-layout) for the arrangement blocking operates on;
+[Computational Complexity](/docs/high-performance/computational-complexity) for the
+external-memory bounds; [Benchmarks](/docs/benchmarks) for measured crossovers.
+
+## References
+
+- M. Frigo, C. Leiserson, H. Prokop and S. Ramachandran, *Cache-Oblivious Algorithms*, FOCS
+  1999.
+- K. Goto and R. van de Geijn, *Anatomy of High-Performance Matrix Multiplication*, ACM TOMS
+  34(3), 2008.
+- F. Van Zee and R. van de Geijn, *BLIS: A Framework for Rapidly Instantiating BLAS
+  Functionality*, ACM TOMS 41(3), 2015.
+- M. Lam, E. Rothberg and M. Wolf, *The Cache Performance and Optimizations of Blocked
+  Algorithms*, ASPLOS 1991.

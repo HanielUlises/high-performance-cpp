@@ -1,0 +1,288 @@
+---
+title: Optimization
+sidebar_label: Optimization
+sidebar_position: 7
+description: Implementation of line-search, quasi-Newton and trust-region methods, and the interfaces that keep them generic.
+---
+
+# Optimization
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Concepts separate objective, gradient and Hessian-action requirements, so a solver states exactly what it consumes.'},
+    {std: 'C++23', note: 'std::expected reports non-convergence as a value rather than an exception or a sentinel.', paper: 'P0323R12'},
+    {std: 'C++26', note: 'std::linalg supplies the dense factorizations used inside trust-region subproblem solves.', paper: 'P1673R13'},
+  ]}
+/>
+
+## Definition
+
+This entry treats the implementation of the methods whose theory is in
+[Optimization](/docs/mathematics/optimization): line-search methods, quasi-Newton updates, and
+trust-region methods, for the unconstrained smooth problem
+
+$$
+\min_{x \in \mathbb{R}^n} f(x).
+$$
+
+<Definition title="Globalisation">
+A *globalisation strategy* is the mechanism by which a locally convergent step is made to
+produce global convergence to a stationary point. The two families are line search — take the
+step direction and shorten it until a sufficient-decrease condition holds — and trust region —
+choose the step within a region where a model is trusted, and adjust the region from the
+observed agreement.
+</Definition>
+
+## Motivation
+
+The theory gives rates; the implementation determines whether they are achieved. Three decisions
+account for most of the difference between a solver that works and one that stalls.
+
+The first is the globalisation strategy, without which Newton and quasi-Newton steps diverge
+from ordinary starting points. The second is the curvature approximation: storing a dense
+Hessian is infeasible above $n \approx 10^4$, and limited-memory updates change the storage
+from $\Theta(n^2)$ to $\Theta(mn)$. The third is the termination criterion, which must be
+scale-invariant or the solver's tolerance means something different for every problem.
+
+## Formal formulation
+
+The Wolfe conditions define an acceptable step $t$ along a descent direction $d$:
+
+$$
+f(x + td) \le f(x) + c_1 t\, \nabla f(x)^{\mathsf{T}} d, \qquad
+\nabla f(x + td)^{\mathsf{T}} d \ge c_2 \nabla f(x)^{\mathsf{T}} d,
+$$
+
+with $0 < c_1 < c_2 < 1$, typically $c_1 = 10^{-4}$ and $c_2 = 0.9$. The first is sufficient
+decrease, the second sufficient curvature; together they guarantee that the BFGS update
+preserves positive definiteness.
+
+The BFGS update, with $s = x_{k+1} - x_k$ and $y = \nabla f_{k+1} - \nabla f_k$, is
+
+$$
+H_{k+1} = \left(I - \frac{s y^{\mathsf{T}}}{y^{\mathsf{T}}s}\right) H_k
+\left(I - \frac{y s^{\mathsf{T}}}{y^{\mathsf{T}}s}\right) + \frac{s s^{\mathsf{T}}}{y^{\mathsf{T}}s},
+$$
+
+approximating the inverse Hessian, and it is positive definite whenever $y^{\mathsf{T}}s > 0$ —
+which the curvature condition guarantees. The limited-memory form stores the last $m$ pairs
+$(s_i, y_i)$ and applies $H_k \nabla f_k$ by the two-loop recursion at cost $\Theta(mn)$ without
+forming $H_k$.
+
+The trust-region subproblem is
+
+$$
+\min_{\lVert p \rVert \le \Delta} \; m_k(p) = f_k + \nabla f_k^{\mathsf{T}} p + \tfrac{1}{2} p^{\mathsf{T}} B_k p,
+$$
+
+and the region is updated from the agreement ratio
+
+$$
+\rho_k = \frac{f(x_k) - f(x_k + p_k)}{m_k(0) - m_k(p_k)},
+$$
+
+expanding when $\rho_k$ is near 1 and contracting when it is small. The advantage over line
+search is that $B_k$ need not be positive definite, so genuine negative curvature is exploited
+rather than modified away.
+
+## C++ representation
+
+The requirement hierarchy, so that each solver consumes only what it needs:
+
+```cpp
+#include <concepts>
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+template <class F>
+concept Objective = requires(const F& f, std::span<const double> x) {
+    { f.dimension() } -> std::convertible_to<std::size_t>;
+    { f.value(x) }    -> std::convertible_to<double>;
+};
+
+template <class F>
+concept GradientObjective = Objective<F> &&
+    requires(const F& f, std::span<const double> x, std::span<double> g) {
+        f.gradient(x, g);
+    };
+
+// Evaluating value and gradient together is usually much cheaper than
+// separately, since they share intermediate quantities.
+template <class F>
+concept FusedObjective = GradientObjective<F> &&
+    requires(const F& f, std::span<const double> x, std::span<double> g) {
+        { f.value_and_gradient(x, g) } -> std::convertible_to<double>;
+    };
+
+}  // namespace hpc
+```
+
+The result type reports why the solver stopped, since "did not converge" is not one condition:
+
+```cpp
+#include <cstddef>
+
+namespace hpc {
+
+enum class termination {
+    gradient_tolerance,     // ‖∇f‖ below tolerance: success
+    step_tolerance,         // step below tolerance: possibly a flat region
+    objective_tolerance,    // no decrease: possibly at rounding floor
+    iteration_limit,
+    evaluation_limit,
+    line_search_failure,    // no acceptable step: bad gradient or non-smoothness
+};
+
+struct optimize_result {
+    termination reason;
+    std::size_t iterations;
+    std::size_t evaluations;
+    double objective;
+    double gradient_norm;
+};
+
+}  // namespace hpc
+```
+
+The L-BFGS two-loop recursion, which is the computational core:
+
+```cpp
+#include <cstddef>
+#include <span>
+#include <vector>
+
+namespace hpc {
+
+// Applies the limited-memory inverse-Hessian approximation to q, in place.
+// Θ(mn) operations, Θ(mn) storage, no matrix formed.
+inline void two_loop_recursion(std::span<double> q,
+                               std::span<const std::vector<double>> s,
+                               std::span<const std::vector<double>> y,
+                               std::span<const double> rho,
+                               double gamma)
+{
+    const std::size_t m = s.size();
+    std::vector<double> alpha(m);
+
+    for (std::size_t i = m; i-- > 0;) {
+        double sq = 0.0;
+        for (std::size_t j = 0; j < q.size(); ++j) { sq += s[i][j] * q[j]; }
+        alpha[i] = rho[i] * sq;
+        for (std::size_t j = 0; j < q.size(); ++j) { q[j] -= alpha[i] * y[i][j]; }
+    }
+
+    for (double& qi : q) { qi *= gamma; }
+
+    for (std::size_t i = 0; i < m; ++i) {
+        double yq = 0.0;
+        for (std::size_t j = 0; j < q.size(); ++j) { yq += y[i][j] * q[j]; }
+        const double beta = rho[i] * yq;
+        for (std::size_t j = 0; j < q.size(); ++j) {
+            q[j] += (alpha[i] - beta) * s[i][j];
+        }
+    }
+}
+
+}  // namespace hpc
+```
+
+## Implementation
+
+The initial scaling $\gamma = s_{k-1}^{\mathsf{T}}y_{k-1} / y_{k-1}^{\mathsf{T}}y_{k-1}$ is
+applied at each iteration and is worth a substantial factor in iteration count; omitting it is
+the most common defect in L-BFGS implementations.
+
+Curvature pairs with $y^{\mathsf{T}}s \le \epsilon \lVert s \rVert \lVert y \rVert$ are
+rejected rather than stored, since they would destroy the positive definiteness of the
+approximation. The rejection is recorded, since a high rejection rate indicates a non-smooth or
+badly scaled problem.
+
+The line search implements the strong Wolfe conditions by bracketing followed by cubic
+interpolation, not by pure backtracking: backtracking satisfies only Armijo, and BFGS requires
+the curvature condition.
+
+Termination is scale-invariant:
+
+$$
+\lVert \nabla f(x_k) \rVert_\infty \le \varepsilon_g \max(1, |f(x_k)|),
+$$
+
+with an additional test on relative step and objective change. An absolute gradient tolerance
+is meaningless, since scaling $f$ by $10^6$ scales the gradient by the same factor.
+
+Derivatives are supplied by [Automatic Differentiation](/docs/scientific-computing/automatic-differentiation)
+where available, and checked against finite differences in a random direction at the starting
+point during development. A gradient error is indistinguishable from a hard problem from the
+solver's point of view, and the check costs one extra evaluation.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Gradient descent iteration', time: 'Θ(n) + cost(∇f)', space: 'Θ(n)', note: 'Θ(κ log 1/ε) iterations'},
+    {operation: 'L-BFGS iteration, memory m', time: 'Θ(mn) + cost(∇f)', space: 'Θ(mn)', note: 'Superlinear in practice'},
+    {operation: 'BFGS iteration, dense', time: 'Θ(n²) + cost(∇f)', space: 'Θ(n²)', note: 'Infeasible above n ≈ 10⁴'},
+    {operation: 'Newton iteration, dense', time: 'Θ(n³) + cost(∇²f)', space: 'Θ(n²)', note: 'Quadratic near the solution'},
+    {operation: 'Truncated Newton (CG–Steihaug)', time: 'Θ(k · cost(∇²f·v))', space: 'Θ(n)', note: 'k inner CG iterations'},
+    {operation: 'Line search, cubic interpolation', time: '2–5 evaluations', space: 'Θ(n)', note: 'Strong Wolfe'},
+    {operation: 'Trust-region subproblem, dogleg', time: 'Θ(n²) or Θ(mn)', space: 'Θ(n)', note: 'Approximate solution suffices'},
+  ]}
+  unit="per iteration, n variables"
+/>
+
+## Performance considerations
+
+The dominant cost is nearly always the objective and gradient evaluation, so the profitable
+optimisations are in the user's function and in reducing the number of evaluations. A fused
+value-and-gradient evaluation, which shares intermediates, is typically 30–50 percent cheaper
+than two separate calls and is the reason `FusedObjective` exists in the concept hierarchy
+above.
+
+Memory `m` in L-BFGS trades storage against iteration count. Values between 5 and 20 are
+standard; beyond 20 the additional pairs contribute little and the $\Theta(mn)$ per-iteration
+cost grows. The choice is made by measurement on representative problems.
+
+Vectors are allocated once for the whole solve, not per iteration. The two-loop recursion above
+touches $\Theta(mn)$ data per iteration in a streaming pattern, so its cost is bandwidth rather
+than arithmetic, and keeping the $2m$ history vectors contiguous matters.
+
+Conditioning dominates everything else. A diagonal rescaling that reduces $\kappa$ by four
+orders of magnitude reduces gradient-descent iterations by the same factor, and no
+implementation change compares. Where the problem's natural scaling is known, applying it is
+the first optimisation.
+
+## Limitations
+
+Non-smooth objectives break the line search: the Wolfe conditions may be unsatisfiable, and the
+solver reports a line-search failure that is a property of the problem rather than a defect.
+Subgradient and proximal methods are the correct treatment and converge far more slowly.
+
+Quasi-Newton methods assume a smooth objective with a positive-definite Hessian near the
+solution. Applied to a problem with indefinite curvature, they either modify the curvature
+implicitly and converge slowly, or require the trust-region formulation.
+
+Termination on a small gradient does not certify a minimum: it certifies a stationary point,
+which may be a saddle. Checking requires second-order information.
+
+Inaccurate gradients — from finite differences, from a loosely converged inner solve, or from a
+stochastic estimate — impose an accuracy floor on the solution and cause line-search failures
+near it. The floor is roughly the square root of the gradient's relative error, which is why
+finite-difference gradients limit the achievable accuracy to about $u^{1/4}$.
+
+## Related entries
+
+[Optimization](/docs/mathematics/optimization) for the theory;
+[Automatic Differentiation](/docs/scientific-computing/automatic-differentiation) for
+derivatives; [Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra)
+for the inner solves; [Analysis](/docs/mathematics/analysis) for convergence.
+
+## References
+
+- J. Nocedal and S. J. Wright, *Numerical Optimization*, 2nd ed., Springer, 2006.
+- D. Liu and J. Nocedal, *On the Limited Memory BFGS Method for Large Scale Optimization*,
+  Mathematical Programming 45, 1989.
+- A. Conn, N. Gould and P. Toint, *Trust-Region Methods*, SIAM, 2000.
+- J. Moré and D. Thuente, *Line Search Algorithms with Guaranteed Sufficient Decrease*, ACM
+  TOMS 20(3), 1994.

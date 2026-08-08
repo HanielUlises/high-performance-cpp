@@ -1,0 +1,244 @@
+---
+title: Correctness
+sidebar_label: Correctness
+sidebar_position: 7
+description: Specification, property-based testing, contracts, sanitisers and verification, and what each establishes.
+---
+
+# Correctness
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Constraints move interface checking to translation time; std::source_location supports precise diagnostics.'},
+    {std: 'C++23', note: 'std::expected expresses recoverable failure in a return type rather than through exceptions or sentinels.', paper: 'P0323R12'},
+    {std: 'C++26', note: 'Contracts add checkable preconditions, postconditions and assertions with defined semantics.', paper: 'P2900'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Correctness">
+A component is correct with respect to a specification $(\mathrm{Pre}, \mathrm{Post})$ when, for
+every input satisfying $\mathrm{Pre}$, execution terminates and the result satisfies
+$\mathrm{Post}$. For numerical components $\mathrm{Post}$ is a bound rather than an equality:
+the computed $\hat{y}$ satisfies
+$$
+\lVert \hat{y} - f(x) \rVert \le \varepsilon(x, u, n)
+$$
+for a stated function $\varepsilon$, and a component with no stated $\varepsilon$ has no
+specification.
+</Definition>
+
+## Motivation
+
+Correctness for the components in this reference is a stronger and stranger requirement than for
+ordinary software, for two reasons.
+
+The intended answer is usually not computable. A numerical routine is correct when it is
+backward stable and its result is accurate to the extent the conditioning permits, and testing it
+against an "expected value" requires either a higher-precision reference or an analytic case.
+
+The generic ones must be correct for types not yet written. An algorithm constrained by a
+concept must work for every type in the model class, and a test suite exercises a handful.
+Correctness therefore rests on the correctness argument being carried out against the
+requirements rather than against the types tested.
+
+## Formal formulation
+
+A specification is the triple: preconditions on inputs, postconditions on outputs, and the
+semantic requirements the type arguments must satisfy.
+
+$$
+\{\mathrm{Pre}(x) \land \mathrm{Sem}(T)\}\; f_T(x) \;\{\mathrm{Post}(x, y)\}.
+$$
+
+For a numerical component, $\mathrm{Post}$ is normally a backward-error statement:
+
+$$
+\hat{y} = f(x + \delta x), \qquad \lVert \delta x \rVert \le c(n)\, u \lVert x \rVert,
+$$
+
+from which the forward error follows by the conditioning, as in
+[Numerical Analysis](/docs/mathematics/numerical-analysis). Testing a forward error directly
+conflates the algorithm's stability with the problem's conditioning and produces tests that fail
+for correct code on ill-conditioned inputs.
+
+Verification methods form a hierarchy by what they establish.
+
+| Method | Establishes | Cost |
+| --- | --- | --- |
+| Type and constraint checking | Interface conformance | Free, complete |
+| `static_assert` | Translation-time propositions | Free, complete |
+| Contracts | Preconditions on observed inputs | Runtime, per call |
+| Example tests | Behaviour on chosen inputs | Low, very incomplete |
+| Property tests | Laws, probabilistically over a generator | Moderate |
+| Metamorphic tests | Relations between outputs without a reference | Moderate |
+| Sanitisers | Absence of observed undefined behaviour | 2–20× slowdown |
+| Fuzzing | Absence of crashes on explored inputs | Continuous |
+| Formal verification | Correctness for all inputs | Very high |
+
+## C++ representation
+
+Specification recorded where the code is:
+
+```cpp
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// Solves L x = b for lower-triangular L, in place on x.
+//
+// Preconditions:
+//   P1. L is n × n lower triangular with non-zero diagonal.
+//   P2. x.size() == n and b.size() == n.
+//   P3. x and b do not overlap L's storage.
+//
+// Postconditions:
+//   Q1. The computed x̂ satisfies (L + ΔL) x̂ = b with
+//       |ΔL| ≤ γ_n |L|, componentwise (Higham, Thm 8.5).
+//
+// Complexity: n² flops, Θ(1) working space.
+void triangular_solve(std::span<const double> L, std::size_t n,
+                      std::span<const double> b, std::span<double> x) noexcept;
+
+}  // namespace hpc
+```
+
+The postcondition is a componentwise backward-error bound with a citation, which is what a
+numerical specification looks like. "Returns the solution" is not a specification.
+
+Property tests discharging the semantic obligations:
+
+```cpp
+#include <cmath>
+#include <random>
+#include <vector>
+
+namespace hpc::testing {
+
+// Metamorphic test for a linear operator: linearity is checkable without
+// knowing the correct output.
+template <class Operator, class Generator>
+bool check_linearity(const Operator& A, Generator& gen, std::size_t n,
+                     double tolerance)
+{
+    std::vector<double> x(n), y(n), z(n);
+    std::vector<double> Ax(n), Ay(n), Az(n);
+
+    for (std::size_t i = 0; i < n; ++i) { x[i] = gen(); y[i] = gen(); }
+    const double alpha = gen();
+    for (std::size_t i = 0; i < n; ++i) { z[i] = alpha * x[i] + y[i]; }
+
+    A.apply(x, Ax);
+    A.apply(y, Ay);
+    A.apply(z, Az);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const double expected = alpha * Ax[i] + Ay[i];
+        if (std::abs(Az[i] - expected) > tolerance * (1.0 + std::abs(expected))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace hpc::testing
+```
+
+Metamorphic testing is the technique that applies when no reference answer exists: it checks
+relations the output must satisfy — linearity, symmetry, scaling behaviour, invariance under
+permutation — rather than the output itself.
+
+## Implementation
+
+The obligations are assigned to methods according to what each can establish.
+
+Interface conformance goes to constraints, checked at every call for free.
+
+Translation-time propositions go to `static_assert`, as in
+[Compile-Time Reasoning](/docs/formal-cpp/compile-time-reasoning).
+
+Preconditions go to contracts or to debug-build assertions, with the cost rule: a check
+asymptotically cheaper than the operation is unconditional, a check of the same order is
+debug-only.
+
+Algebraic laws go to property tests over generators that deliberately produce the awkward values
+— zero, one, infinities, NaN, denormals, empty ranges, single-element ranges, and maximal values
+— since these are where laws fail and where naive generators rarely land.
+
+Numerical claims go to tests against a higher-precision reference where one is available, and to
+backward-error checks where it is not. The backward-error check is universally available: form
+the residual, compare it against the bound the specification claims, and fail if it exceeds it.
+
+Undefined behaviour goes to sanitisers, run over the entire test suite in continuous
+integration. Address, undefined-behaviour and thread sanitisers detect different classes and are
+run separately.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Constraint check', time: 'Θ(0) runtime', space: 'Θ(0)', note: 'Translation time only'},
+    {operation: 'Precondition check, Θ(1) predicate', time: 'Θ(1)', space: 'Θ(1)', note: 'Always enabled'},
+    {operation: 'Precondition check, Θ(n) predicate on Θ(n) work', time: 'Θ(n)', space: 'Θ(1)', note: 'Debug builds only'},
+    {operation: 'Property test, k trials', time: 'Θ(k · cost)', space: 'Θ(1)', note: 'Probabilistic'},
+    {operation: 'Backward-error check', time: 'Θ(cost of residual)', space: 'Θ(n)', note: 'Universally applicable'},
+    {operation: 'Higher-precision reference comparison', time: '10–100× the operation', space: 'Θ(n)', note: 'Where a reference exists'},
+    {operation: 'Address sanitiser', time: '≈ 2×', space: '≈ 3×', note: 'Memory errors'},
+    {operation: 'Thread sanitiser', time: '5–15×', space: '5–10×', note: 'Observed races only'},
+  ]}
+/>
+
+## Performance considerations
+
+Checks that survive into release builds must be cheap relative to the work they guard, which is
+the sole criterion. An $\Theta(1)$ alias check before an $\Theta(n)$ kernel is free; an
+$\Theta(n)$ symmetry check before an $\Theta(n)$ operator application doubles the cost and
+belongs in debug builds or in a probabilistic form.
+
+Sanitisers change performance by enough that they cannot be enabled in production, so they run
+over the test suite rather than in deployment. Their slowdown also changes timing-dependent
+behaviour, which is why a thread sanitiser finds some races and hides others.
+
+Test suites for numerical code are dominated by the higher-precision references, when used. A
+reference computed in binary128 by software emulation is one to two orders of magnitude slower
+than the routine under test, so the reference tests run on small sizes and the backward-error
+checks run on large ones.
+
+Property tests should be sized so they run on every build. A test suite that is skipped because
+it is slow establishes nothing.
+
+## Limitations
+
+Testing establishes the absence of the defects it looked for. For generic code it samples a
+handful of types from a model class that is unbounded, and for numerical code it samples inputs
+from a space where the difficult cases are rare and structured.
+
+Sanitisers detect undefined behaviour that occurs during execution; behaviour on paths not taken
+is untouched, and thread sanitisers observe only the interleavings that happened.
+
+Formal verification of C++ at the scale of a numerical library remains impractical. It is
+applied selectively, to small components whose correctness is both critical and subtle —
+error-free transformations, fixed-point arithmetic, protocol state machines.
+
+Floating-point results depend on the compiler, the flags, the vector width and the number of
+workers, so exact-comparison tests are not portable. Every numerical test carries a tolerance
+derived from the error analysis, and a tolerance chosen to make a test pass is a defect in the
+test.
+
+## Related entries
+
+[Semantic Requirements](/docs/formal-cpp/semantic-requirements) for the obligations;
+[Compile-Time Reasoning](/docs/formal-cpp/compile-time-reasoning) for what is free;
+[Numerical Analysis](/docs/mathematics/numerical-analysis) for the error bounds that
+specifications quote; [Benchmarks](/docs/benchmarks) for the measurement discipline.
+
+## References
+
+- N. J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed., SIAM, 2002.
+- K. Claessen and J. Hughes, *QuickCheck*, ICFP 2000.
+- T. Chen et al., *Metamorphic Testing: A Review of Challenges and Opportunities*, ACM Computing
+  Surveys 51(1), 2018.
+- J. Regehr et al., *Test-Case Reduction for C Compiler Bugs*, PLDI 2012.
+- B. Meyer, *Applying Design by Contract*, IEEE Computer 25(10), 1992.

@@ -1,0 +1,238 @@
+---
+title: Parallelism
+sidebar_label: Parallelism
+sidebar_position: 7
+description: Decomposition, scheduling, scaling laws, and the cost of coordination.
+---
+
+# Parallelism
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'std::jthread with cooperative cancellation; parallel algorithms with execution policies from C++17.'},
+    {std: 'C++23', note: 'std::generator and improved range support simplify producer–consumer decompositions.', paper: 'P2502R2'},
+    {std: 'C++26', note: 'Senders and receivers provide a standard asynchronous execution model with schedulers as first-class objects.', paper: 'P2300R10'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Work and span">
+For a parallel computation modelled as a directed acyclic graph of tasks, the *work* $T_1$ is
+the total time on one processor and the *span* $T_\infty$ is the length of the longest
+dependence chain. The *parallelism* is $T_1 / T_\infty$, an upper bound on the speed-up
+achievable with any number of processors.
+</Definition>
+
+A greedy scheduler on $p$ processors satisfies
+
+$$
+\max\left(\frac{T_1}{p}, T_\infty\right) \le T_p \le \frac{T_1}{p} + T_\infty,
+$$
+
+so a computation with $T_1/T_\infty \gg p$ achieves near-linear speed-up under any reasonable
+scheduler, and one with small parallelism does not, whatever the implementation.
+
+## Motivation
+
+Core counts increase; single-core throughput does not. Any computation whose running time
+matters must use more than one core, and the questions are how to decompose it, how to
+schedule the pieces, and what the coordination costs.
+
+The answers are constrained by two laws. Amdahl's law bounds the speed-up on a fixed problem
+by the reciprocal of the serial fraction. Gustafson's observation is that the serial fraction
+usually shrinks as the problem grows, so the relevant question is often weak scaling — fixed
+work per processor — rather than strong scaling.
+
+$$
+S_{\text{strong}}(p) = \frac{1}{s + (1-s)/p}, \qquad
+S_{\text{weak}}(p) = p - s(p - 1).
+$$
+
+At $s = 0.05$, strong scaling saturates at 20 regardless of $p$; weak scaling continues to
+grow. Reporting one without saying which is the most common ambiguity in parallel performance
+claims.
+
+## Formal formulation
+
+For a decomposition into $p$ tasks with computation $T_{\text{comp}}$ and communication or
+synchronisation $T_{\text{sync}}$ per task, the efficiency is
+
+$$
+E(p) = \frac{T_1}{p\,T_p} = \frac{1}{1 + T_{\text{sync}}/T_{\text{comp}}},
+$$
+
+so efficiency is governed by the ratio of coordination to work per task. This gives the
+granularity rule directly: tasks must be large enough that the ratio is small, and the
+threshold is measured in the tens of microseconds for thread-level scheduling.
+
+Load imbalance enters as the ratio of maximum to mean task cost. With per-task costs $c_i$,
+
+$$
+T_p \ge \max_i c_i \quad\text{and}\quad T_p \ge \frac{1}{p}\sum_i c_i,
+$$
+
+so a single task ten times the mean bounds the running time at ten times the ideal regardless
+of $p$. Dynamic scheduling addresses this at the cost of a shared queue; work stealing
+addresses it with $O(\sqrt{p})$ expected steals and is the standard construction.
+
+## C++ representation
+
+The decomposition made explicit, with the workspace per worker allocated once:
+
+```cpp
+#include <algorithm>
+#include <cstddef>
+#include <span>
+#include <thread>
+#include <vector>
+
+namespace hpc {
+
+// Static block decomposition: p contiguous chunks, one per worker.
+// Suitable when per-element cost is uniform.
+template <class Kernel>
+void parallel_for_blocked(std::size_t n, std::size_t workers, Kernel&& kernel) {
+    if (workers <= 1 || n < workers) {
+        kernel(std::size_t{0}, n, std::size_t{0});
+        return;
+    }
+
+    std::vector<std::jthread> threads;
+    threads.reserve(workers);
+    const std::size_t chunk = (n + workers - 1) / workers;
+
+    for (std::size_t w = 0; w < workers; ++w) {
+        const std::size_t begin = w * chunk;
+        const std::size_t end = std::min(n, begin + chunk);
+        if (begin >= end) { break; }
+        threads.emplace_back([&kernel, begin, end, w] { kernel(begin, end, w); });
+    }
+}
+
+}  // namespace hpc
+```
+
+A reduction with per-worker accumulators and a single combining step, so that no atomic
+operation appears in the inner loop:
+
+```cpp
+#include <cstddef>
+#include <span>
+#include <vector>
+
+namespace hpc {
+
+// Each worker accumulates into its own cache-line-separated slot; the final
+// combination is Θ(p). No contention, one synchronisation point.
+inline double parallel_sum(std::span<const double> x, std::size_t workers) {
+    struct alignas(64) slot { double value = 0.0; };
+    std::vector<slot> partials(workers);
+
+    parallel_for_blocked(x.size(), workers,
+        [&](std::size_t begin, std::size_t end, std::size_t w) {
+            double acc = 0.0;
+            for (std::size_t i = begin; i < end; ++i) { acc += x[i]; }
+            partials[w].value = acc;
+        });
+
+    double total = 0.0;
+    for (const slot& s : partials) { total += s.value; }
+    return total;
+}
+
+}  // namespace hpc
+```
+
+The result depends on `workers`, since the summation order does. Where reproducibility across
+worker counts is required, the combination must use a fixed tree independent of $p$, and the
+per-worker partition must be fixed as well.
+
+## Implementation
+
+Decomposition follows the data, not the loops. For a stencil computation the natural
+decomposition is by subdomain with halo exchange; for a particle method by spatial cell; for a
+dense factorization by block column. In each case the decomposition determines both the
+parallelism and the communication volume, and choosing it is the design decision.
+
+Granularity is chosen so that each task is at least tens of microseconds of work. Finer tasks
+spend their time in the scheduler; coarser tasks lose to load imbalance. Where the cost per
+item varies, dynamic scheduling with a chunk size chosen so that the number of chunks is a
+few times $p$ balances the two.
+
+Per-worker state is allocated once, aligned to cache lines, and first-touched by the worker
+that will use it, for the NUMA reasons in [Memory](/docs/high-performance/memory).
+
+Nested parallelism is avoided in favour of a single flat decomposition with a shared thread
+pool. Two nested parallel regions each creating $p$ threads create $p^2$, and the
+oversubscription costs more than the additional parallelism gains.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Parallel elementwise transform', time: 'Θ(n/p)', space: 'Θ(1)', note: 'Perfectly parallel; bandwidth-bound at large p'},
+    {operation: 'Parallel reduction, tree combine', time: 'Θ(n/p + log p)', space: 'Θ(p)', note: 'One synchronisation'},
+    {operation: 'Parallel scan', time: 'Θ(n/p + log p)', space: 'Θ(p)', note: 'Two passes over the data'},
+    {operation: 'Thread creation', time: '≈ 10–100 μs', space: 'Θ(stack)', note: 'Amortise with a pool'},
+    {operation: 'Barrier, p threads', time: 'Θ(log p), ≈ 1–10 μs', space: 'Θ(p)', note: 'Cost grows with contention'},
+    {operation: 'Work-stealing steal attempt', time: 'Θ(1) expected', space: 'Θ(p)', note: 'O(√p) steals expected per phase'},
+  ]}
+  unit="p workers, n elements"
+/>
+
+## Performance considerations
+
+Bandwidth-bound kernels stop scaling when the memory system saturates, typically at a small
+fraction of the available cores. Measuring a stream benchmark on the target and comparing the
+kernel's traffic against it predicts the saturation point before any parallelisation work is
+done.
+
+NUMA placement determines whether additional sockets help or hurt. An array allocated and
+first-touched by one thread lives on one node, and every thread on another node then reads
+across the interconnect at reduced bandwidth and increased latency. Parallel first touch with
+the same decomposition as the computation is the fix, and it must be applied to every array.
+
+False sharing turns an embarrassingly parallel loop into a serialised one. Per-worker
+accumulators on distinct cache lines, as above, is the standard construction and the reason
+the `alignas` appears.
+
+Thread affinity stabilises measurements and often improves them, by keeping a worker on the
+core whose cache holds its data. It is set explicitly for benchmarks and reported with the
+results.
+
+Amdahl's law applies to the whole program including initialisation and I/O. A kernel scaling
+perfectly inside a program that spends 30 percent of its time reading input scales to at most
+3.3 overall, and the profitable work is on the input path.
+
+## Limitations
+
+Speed-up is bounded by the parallelism $T_1/T_\infty$, which is a property of the algorithm.
+An algorithm with a long dependence chain — sequential Gauss–Seidel, an implicit time
+integrator without a parallel solver — does not become parallel through implementation effort,
+and the response is a different algorithm with different numerical properties.
+
+Parallel results are usually not bitwise reproducible, since the reduction order depends on
+the schedule. Deterministic reduction requires a fixed partition and a fixed combining tree,
+which costs flexibility and sometimes performance.
+
+Measurement of parallel code is harder than of serial code: interference from other processes,
+frequency scaling under multi-core load, and NUMA effects all vary between runs. The protocol
+in [Conventions](/docs/conventions) — affinity pinned, frequency fixed or reported, minimum or
+median as stated — exists for this reason.
+
+## Related entries
+
+[Concurrency](/docs/high-performance/concurrency) for the memory model and synchronisation
+primitives; [Memory](/docs/high-performance/memory) for NUMA and false sharing;
+[GPU Computing](/docs/high-performance/gpu-computing) for the throughput-oriented case;
+[Computational Complexity](/docs/high-performance/computational-complexity) for work–span.
+
+## References
+
+- G. Amdahl, *Validity of the Single Processor Approach*, AFIPS 1967.
+- J. Gustafson, *Reevaluating Amdahl's Law*, CACM 31(5), 1988.
+- R. Blumofe and C. Leiserson, *Scheduling Multithreaded Computations by Work Stealing*, JACM
+  46(5), 1999.
+- M. McCool, A. Robison and J. Reinders, *Structured Parallel Programming*, Morgan Kaufmann,
+  2012.

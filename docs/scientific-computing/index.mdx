@@ -1,0 +1,67 @@
+---
+title: Scientific Computing
+sidebar_label: Overview
+sidebar_position: 0
+description: Numerical kernels developed to implementation — factorizations, sparse structure, quadrature, evolution equations, differentiation.
+---
+
+# Scientific Computing
+
+This part carries the mathematics of the previous parts through to implementations whose cost
+and accuracy are both stated.
+
+## What distinguishes this part
+
+The entries in [Mathematics](/docs/mathematics) state what is to be computed; the entries here
+state how, at what cost, and with what error. Each develops a kernel to the point where its
+operation count, its memory traffic, its arithmetic intensity and its backward error bound are
+all available, and where the interface it presents is the one used by the rest of the
+reference.
+
+Two questions recur and are answered explicitly in every entry.
+
+The first is whether the kernel is compute-bound or memory-bound, since this determines what
+optimisation is worth attempting. Dense factorizations restructured around matrix–matrix
+products are compute-bound; sparse operator applications and explicit time stepping are
+memory-bound at every size, and no arrangement of the arithmetic changes that.
+
+The second is what the computed result approximates. A backward-stable factorization solves a
+nearby problem exactly, and the accuracy of the answer is that fact multiplied by the
+conditioning. Reporting a residual as though it were an error is the standard mistake, and
+these entries state which is which.
+
+## Entries
+
+| Entry | Subject |
+| --- | --- |
+| [Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra) | LU, Cholesky, QR, eigenvalue and least-squares problems |
+| [Sparse Computation](/docs/scientific-computing/sparse-computation) | Storage formats, sparse products, ordering, sparse direct methods |
+| [Numerical Integration](/docs/scientific-computing/numerical-integration) | Quadrature rules, adaptivity, high-dimensional integration |
+| [Differential Equations](/docs/scientific-computing/differential-equations) | Initial-value problems, stability, stiffness, step control |
+| [Partial Differential Equations](/docs/scientific-computing/pdes) | Discretisation, stencils, solvers, and their performance characteristics |
+| [Automatic Differentiation](/docs/scientific-computing/automatic-differentiation) | Forward and reverse mode, cost, implementation by operator overloading |
+| [Optimization](/docs/scientific-computing/optimization) | Implementation of descent, quasi-Newton and trust-region methods |
+
+## The common interface
+
+Every kernel in this part takes non-owning views and caller-supplied workspace:
+
+```cpp
+#include <mdspan>
+#include <span>
+
+namespace hpc {
+
+// Storage is the caller's; the routine allocates nothing.
+// Layout is a compile-time parameter; extents are runtime values.
+template <class Layout>
+void factorize(std::mdspan<double, std::dextents<std::size_t, 2>, Layout> A,
+               std::span<std::size_t> pivots,
+               std::span<double> workspace) noexcept;
+
+}  // namespace hpc
+```
+
+The convention has three consequences: a routine can be called on a sub-block without copying,
+it can be used where allocation is prohibited, and its working-set size appears in its
+signature rather than in its documentation.

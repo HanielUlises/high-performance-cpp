@@ -1,0 +1,254 @@
+---
+title: Data Layout
+sidebar_label: Data Layout
+sidebar_position: 4
+description: Array of structures against structure of arrays, tiling, padding and alignment, and the interfaces that keep layout a parameter.
+---
+
+# Data Layout
+
+<Standards
+  entries={[
+    {std: 'C++20', note: 'Over-aligned allocation, std::span, and std::bit_cast for defined reinterpretation of storage.'},
+    {std: 'C++23', note: 'std::mdspan makes the index mapping a policy, so layout becomes a template parameter rather than a rewrite.', paper: 'P0009R18'},
+    {std: 'C++26', note: 'std::simd operates naturally on structure-of-arrays layouts; reflection can generate SoA views from a record type.', paper: 'P1928, P2996'},
+  ]}
+/>
+
+## Definition
+
+<Definition title="Layout">
+A layout is an injective map from a logical index space to memory offsets,
+$$
+\mathcal{M} : \prod_{k} \{0,\dots,e_k-1\} \to \mathbb{N},
+$$
+together with an element size. Two layouts are *equivalent as data* when they represent the
+same values, and differ as *programs* in the transfer count and vector-width utilisation of
+every traversal.
+</Definition>
+
+## Motivation
+
+The choice between an array of structures and a structure of arrays is the clearest case where
+a decision with no semantic content determines performance.
+
+Consider $N$ particles with position, velocity and mass, and a kernel that updates positions
+from velocities. In array-of-structures form each particle occupies 56 bytes and the kernel
+touches 48 of them, so a 64-byte line delivers roughly one particle and the traffic is $56N$
+bytes for $48N$ bytes of useful data. In structure-of-arrays form the kernel streams six
+contiguous arrays, uses every byte fetched, and the loads feed vector registers directly
+because consecutive particles are consecutive in memory.
+
+The measured difference on such a kernel is typically a factor of two to four, and it is
+obtained without changing a single arithmetic operation.
+
+## Formal formulation
+
+For a record of $F$ fields with sizes $s_1, \dots, s_F$ and a kernel using a subset
+$S \subseteq \{1,\dots,F\}$, the traffic per element is
+
+$$
+\text{AoS: } \left\lceil \frac{\sum_{f} s_f}{B} \right\rceil B, \qquad
+\text{SoA: } \sum_{f \in S} s_f,
+$$
+
+so the efficiency of the array-of-structures form is $\sum_{f \in S} s_f / \sum_f s_f$ and the
+structure-of-arrays form wastes nothing. The comparison inverts when $S$ is nearly all fields
+and the access is random: then array-of-structures fetches one line and structure-of-arrays
+fetches $|S|$ lines from $|S|$ distinct streams, exhausting the prefetchers and the TLB.
+
+The rule that follows is exact rather than heuristic: structure-of-arrays for full sweeps over
+a field subset, array-of-structures for random access to whole records, and the hybrid
+array-of-structures-of-arrays for both.
+
+The hybrid layout with block size $W$ maps element $i$ of field $f$ to
+
+$$
+\mathcal{M}(f, i) = \left\lfloor \frac{i}{W} \right\rfloor \cdot W \sum_g s_g
++ W \sum_{g < f} s_g + (i \bmod W)\, s_f,
+$$
+
+which places $W$ consecutive elements of each field contiguously — a vector register's worth —
+while keeping a whole block of all fields within a few lines.
+
+For a two-dimensional array, the padded row-major layout is
+
+$$
+\mathcal{M}(i,j) = i \cdot \mathrm{ld} + j, \qquad \mathrm{ld} \ge n,
+$$
+
+with the leading dimension $\mathrm{ld}$ chosen to avoid cache-set conflicts, as developed in
+[Cache Locality](/docs/high-performance/cache-locality).
+
+## C++ representation
+
+The two layouts, with the same logical interface:
+
+```cpp
+#include <cstddef>
+#include <span>
+#include <vector>
+
+namespace hpc {
+
+// Array of structures: one record per element.
+struct particle {
+    double x, y, z;
+    double vx, vy, vz;
+    double mass;
+};
+
+using particle_aos = std::vector<particle>;
+
+// Structure of arrays: one array per field. Element i is (x[i], y[i], ...).
+struct particle_soa {
+    std::vector<double> x, y, z;
+    std::vector<double> vx, vy, vz;
+    std::vector<double> mass;
+
+    std::size_t size() const noexcept { return x.size(); }
+};
+
+// The kernel over the SoA form: three independent streams in, three out.
+inline void advance(particle_soa& p, double dt) noexcept {
+    const std::size_t n = p.size();
+    for (std::size_t i = 0; i < n; ++i) { p.x[i] += dt * p.vx[i]; }
+    for (std::size_t i = 0; i < n; ++i) { p.y[i] += dt * p.vy[i]; }
+    for (std::size_t i = 0; i < n; ++i) { p.z[i] += dt * p.vz[i]; }
+}
+
+}  // namespace hpc
+```
+
+Splitting into three loops rather than one keeps the number of concurrent streams within the
+prefetchers' capacity and gives each loop a clean vectorizable body; fusing them into one loop
+with six streams is measurably worse on machines with few stream detectors, and the choice is
+made by measurement.
+
+Layout as a template parameter, so that a kernel need not choose:
+
+```cpp
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// One kernel, both storage orders; the mapping is resolved at compile time.
+template <class Layout>
+double frobenius_norm_squared(
+    std::mdspan<const double, std::dextents<std::size_t, 2>, Layout> A) noexcept
+{
+    double acc = 0.0;
+    if constexpr (std::is_same_v<Layout, std::layout_left>) {
+        for (std::size_t j = 0; j < A.extent(1); ++j) {
+            for (std::size_t i = 0; i < A.extent(0); ++i) { acc += A[i, j] * A[i, j]; }
+        }
+    } else {
+        for (std::size_t i = 0; i < A.extent(0); ++i) {
+            for (std::size_t j = 0; j < A.extent(1); ++j) { acc += A[i, j] * A[i, j]; }
+        }
+    }
+    return acc;
+}
+
+}  // namespace hpc
+```
+
+## Implementation
+
+Layout decisions are made once, at the boundary of a component, and expressed in its
+interface. A kernel taking `mdspan` with a layout policy commits to nothing; a kernel taking
+`vector<particle>` commits its callers to array-of-structures for all time.
+
+Padding is applied to leading dimensions to avoid power-of-two strides, and to record types to
+avoid false sharing between per-thread entries. Both are stated as named constants with the
+reason attached:
+
+```cpp
+#include <cstddef>
+
+namespace hpc {
+
+// Break cache-set aliasing on power-of-two leading dimensions.
+constexpr std::size_t padded_leading_dimension(std::size_t n,
+                                               std::size_t element_size = 8,
+                                               std::size_t line = 64) noexcept
+{
+    const std::size_t elements_per_line = line / element_size;
+    return (n % (2 * elements_per_line) == 0) ? n + elements_per_line : n;
+}
+
+}  // namespace hpc
+```
+
+Alignment is established at allocation and asserted at use, never assumed. Over-aligning to
+the vector width removes the split-line penalty on loads and permits aligned store
+instructions.
+
+## Complexity
+
+<Complexity
+  rows={[
+    {operation: 'Full sweep over 3 of 7 fields, AoS', time: 'Θ(n)', space: 'Θ(1)', note: '56n bytes moved; 43% useful'},
+    {operation: 'Full sweep over 3 of 7 fields, SoA', time: 'Θ(n)', space: 'Θ(1)', note: '24n bytes moved; 100% useful'},
+    {operation: 'Random access to whole records, AoS', time: 'Θ(k)', space: 'Θ(1)', note: '1 line per record'},
+    {operation: 'Random access to whole records, SoA', time: 'Θ(k · F)', space: 'Θ(1)', note: 'F lines per record; TLB pressure'},
+    {operation: 'Row-major traversal, row-major store', time: 'Θ(mn)', space: 'Θ(1)', note: 'Θ(mn/B) transfers'},
+    {operation: 'Column-major traversal, row-major store', time: 'Θ(mn)', space: 'Θ(1)', note: 'Θ(mn) transfers: one line per element'},
+  ]}
+/>
+
+## Performance considerations
+
+Traversal order must match storage order. A column-major traversal of row-major storage
+fetches a full line per element and runs at a fraction of bandwidth; the same loops
+interchanged run at full speed. Where both orders are needed, an explicit blocked transpose
+costs $\Theta(n^2/B)$ transfers once and pays for itself immediately.
+
+Vectorization depends on layout more than on any pragma. Structure-of-arrays produces unit
+stride, which loads directly into vector registers; array-of-structures produces a gather,
+which on current hardware costs several times a contiguous load and often prevents
+vectorization entirely.
+
+The number of concurrent memory streams is bounded by the prefetchers, typically 8 to 16 per
+core. A loop touching twenty arrays exceeds this and reverts to demand fetching; splitting it
+into several loops each with a few streams restores the prefetch behaviour, at the cost of an
+extra pass — a trade to be measured.
+
+Alignment to the vector width matters most for stores. An unaligned store crossing a line
+boundary is split into two transactions, and in a store-heavy kernel this halves throughput.
+
+## Limitations
+
+Structure-of-arrays destroys the record as a type: there is no object representing one
+particle, so code that wants one must gather the fields, and constructors, invariants and
+generic algorithms over records no longer apply. Libraries that generate SoA views from a
+record type mitigate this at the cost of substantial machinery; reflection in C++26 is
+expected to make the generation routine.
+
+The optimal layout is a property of the access pattern, and a program with several access
+patterns over the same data has no single optimum. The resolution is either a hybrid layout,
+or maintaining two representations and paying to convert.
+
+Padding wastes memory and, for large arrays, cache capacity. The trade is favourable for
+leading dimensions and unfavourable for element types, where padding a 12-byte record to 16
+bytes increases traffic by a third.
+
+## Related entries
+
+[Cache Locality](/docs/high-performance/cache-locality) for blocking;
+[SIMD](/docs/high-performance/simd) and [Vectorization](/docs/high-performance/vectorization)
+for the vector-width consequences;
+[Standard Library](/docs/modern-cpp/standard-library) for `mdspan`;
+[Sparse Computation](/docs/scientific-computing/sparse-computation) for layouts of irregular
+data.
+
+## References
+
+- K. Goto and R. van de Geijn, *Anatomy of High-Performance Matrix Multiplication*, ACM TOMS
+  34(3), 2008.
+- C. Trott et al., *Kokkos: Enabling Manycore Performance Portability*, JPDC 74(12), 2014, on
+  layout as a policy.
+- U. Drepper, *What Every Programmer Should Know About Memory*, 2007, sections on prefetching
+  and TLB.
+- I. Wald et al., *Data layout for SIMD ray tracing*, HPG 2008, for the AoSoA construction.

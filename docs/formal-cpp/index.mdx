@@ -1,0 +1,60 @@
+---
+title: Formal C++
+sidebar_label: Overview
+sidebar_position: 0
+description: Types read as mathematical objects, concepts as predicates, and the obligations the type system does not discharge.
+---
+
+# Formal C++
+
+This part reads C++ as a formal notation: types as sets with operations, concepts as predicates
+over those types, constraints as a decidable approximation of implication, and templates as
+maps from arguments to entities.
+
+## Why the reading is useful
+
+Two practical questions motivate it.
+
+The first is what a generic interface actually promises. A template constrained by a concept
+promises that the substitution succeeds and the syntax exists. It does not promise that the
+operations behave — that addition is associative, that a comparison is a strict weak ordering,
+that a copy is indistinguishable from its source. Separating the part the compiler checks from
+the part it does not is a prerequisite for reasoning about generic code, and the separation is
+formal rather than stylistic.
+
+The second is what can be established during translation. `constexpr` evaluation, `static_assert`
+and constraint satisfaction constitute a small proof system: total, decidable, and confined to
+properties of a program's syntax and of values known at translation time. Knowing its boundary
+tells one which correctness obligations must be discharged by testing, by contracts, or by
+external verification.
+
+## Entries
+
+| Entry | Subject |
+| --- | --- |
+| [Types as Abstractions](/docs/formal-cpp/types-as-abstractions) | The type as a value space with operations, and regularity |
+| [Concepts as Predicates](/docs/formal-cpp/concepts-as-predicates) | Concepts as functions from types to booleans, and the sets they denote |
+| [Constraints](/docs/formal-cpp/constraints) | Subsumption as a decidable approximation of implication |
+| [Semantic Requirements](/docs/formal-cpp/semantic-requirements) | The laws concepts cannot state, and how they are discharged |
+| [Type-Level Programming](/docs/formal-cpp/type-level-programming) | Computation in the type language and its expressive power |
+| [Compile-Time Reasoning](/docs/formal-cpp/compile-time-reasoning) | What the translator can be made to prove |
+| [Correctness](/docs/formal-cpp/correctness) | Specification, property-based testing, contracts, verification |
+
+## The boundary
+
+The organising diagram of this part is the division of a component's specification into three
+parts.
+
+<Chain
+  compact
+  stages={[
+    {label: 'Checked by the compiler — syntax, arity, types, constraint satisfaction'},
+    {label: 'Stated and unchecked — algebraic laws, complexity, preconditions on values'},
+    {label: 'Established by other means — property tests, contracts, proof'},
+  ]}
+/>
+
+Work in the first band is free and complete. Work in the second is where most defects in
+generic numerical code live, because the obligations are real, load-bearing, and invisible.
+Work in the third is expensive and is applied selectively, to the obligations whose violation is
+both plausible and consequential.
