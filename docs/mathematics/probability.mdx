@@ -27,30 +27,48 @@ $X : \Omega \to \mathbb{R}$, and its expectation is the integral
 $\mathbb{E}[X] = \int_\Omega X \, d\mathbb{P}$ when it exists.
 </Definition>
 
+#### Why the measure-theoretic setting is worth keeping
+
+For finite sample spaces the machinery is unnecessary, and for the continuous ones that occur in
+simulation it is not: without it there is no coherent account of conditioning, of limits of
+sequences of random variables, or of the stochastic integrals that stochastic differential
+equations are defined by. The setting also supplies the notion of a $\sigma$-algebra as the
+information available at a point in time, which is what makes filtrations and hence path-dependent
+simulation precise.
+
+#### Variance and its additivity
+
 The variance is $\operatorname{Var}(X) = \mathbb{E}[(X - \mathbb{E}X)^2]$, and for independent
-$X_1, \dots, X_n$ variances add. That single fact, additivity of variance under independence, is
-what produces the $n^{-1/2}$ rate that governs every Monte Carlo method.
+$X_1, \dots, X_n$ variances add. That single fact is what produces the $n^{-1/2}$ rate that governs
+every Monte Carlo method, and it is also what makes variance reduction the only lever available:
+the rate is fixed, so only the constant $\sigma^2$ can be changed.
 
 #### Independence and its computational meaning
 
-Independence is a statement about the measure, and in computation it becomes a statement about
-streams: two sequences of pseudorandom numbers are treated as independent when no statistical test
-in use distinguishes them from independent samples. This is a weaker and more fragile notion than
-the mathematical one, and it is the reason parallel Monte Carlo requires deliberate stream
-splitting rather than sharing one generator.
+Independence is a statement about the measure. In computation it becomes a statement about streams:
+two sequences of pseudorandom numbers are treated as independent when no statistical test in use
+distinguishes them from independent samples. This is a weaker and more fragile notion than the
+mathematical one, and it is why parallel Monte Carlo requires deliberate stream splitting rather
+than sharing one generator.
 
 ### Modes of convergence
 
 Three modes are used, and they are not interchangeable.
 
-Convergence in probability: $\mathbb{P}(|X_n - X| > \varepsilon) \to 0$ for every $\varepsilon$.
-This is what the weak law of large numbers gives.
+#### In probability
 
-Almost sure convergence: $\mathbb{P}(X_n \to X) = 1$. This is what the strong law gives, and it
-is what justifies treating a single long run as representative.
+$\mathbb{P}(|X_n - X| > \varepsilon) \to 0$ for every $\varepsilon$. This is what the weak law of
+large numbers gives, and it is enough to justify a single estimate at a single sample size.
 
-Convergence in distribution: $\mathbb{E}[g(X_n)] \to \mathbb{E}[g(X)]$ for bounded continuous $g$.
-This is what the central limit theorem gives, and it is the basis of confidence intervals.
+#### Almost surely
+
+$\mathbb{P}(X_n \to X) = 1$. This is what the strong law gives, and it is what justifies treating
+one long run as representative rather than needing independent repetitions.
+
+#### In distribution
+
+$\mathbb{E}[g(X_n)] \to \mathbb{E}[g(X)]$ for bounded continuous $g$. This is what the central
+limit theorem gives, and it is the basis of confidence intervals.
 
 <Theorem title="Central limit theorem">
 For independent identically distributed $X_i$ with mean $\mu$ and finite variance $\sigma^2$,
@@ -60,8 +78,25 @@ $$
 </Theorem>
 
 The finite-variance hypothesis is where practical trouble enters: for heavy-tailed integrands the
-sample variance does not converge, the confidence interval computed from it is meaningless, and
-the failure is silent.
+sample variance does not converge, the confidence interval computed from it is meaningless, and the
+failure is silent. The Berry-Esseen theorem quantifies the rate of approach, $O(n^{-1/2})$ with a
+constant involving the third absolute moment, which is why intervals from small samples of skewed
+distributions are unreliable even when the variance is finite.
+
+### Distributions that recur
+
+| Distribution | Where it appears | Sampling method |
+| --- | --- | --- |
+| Uniform on $[0,1)$ | The primitive from which others are built | Bit manipulation of the generator output |
+| Normal | Errors, diffusions, random projections | Box-Muller, Ziggurat |
+| Exponential | Waiting times, Poisson processes | Inverse transform, $-\log U$ |
+| Poisson | Event counts | Knuth's product method, or inversion |
+| Discrete with $k$ outcomes | Resampling, mixtures | Alias method, $O(1)$ per sample |
+| Multivariate normal | Gaussian processes, sketching | Cholesky factor times a normal vector |
+
+The alias method is worth naming because it is the case where the obvious algorithm, a linear or
+binary search over a cumulative distribution, is asymptotically worse than necessary: $O(k)$ or
+$O(\log k)$ per sample against $O(1)$ after $O(k)$ preprocessing.
 
 ## Motivation
 
@@ -71,15 +106,19 @@ Randomness enters numerical computing in three distinct ways, and conflating the
 
 Stochastic differential equations, Monte Carlo integration of high-dimensional integrals, and
 uncertainty quantification. Here the randomness is part of the specification and the answer is a
-distribution or a functional of one.
+distribution or a functional of one. Reproducibility is a testing convenience, not a correctness
+requirement.
 
 ### As an algorithmic device on a deterministic problem
 
-Randomised low-rank approximation, sketching for least squares, randomised pivoting, hashing.
-Here the input is deterministic and the algorithm's guarantees are probabilistic, holding with
-high probability over its internal randomness. The distinction matters for testing: such an
-algorithm may be rerun with a different seed, and a failure that does not recur is a
-probabilistic event rather than a defect.
+Randomised low-rank approximation, sketching for least squares, randomised pivoting, hashing. Here
+the input is deterministic and the algorithm's guarantees are probabilistic, holding with high
+probability over its internal randomness.
+
+The distinction matters for testing: such an algorithm may be rerun with a different seed, and a
+failure that does not recur is a probabilistic event rather than a defect. It also matters for
+reporting: a result without its failure probability is as incomplete as a numerical result without
+its error bound.
 
 ### As an error model
 
@@ -101,9 +140,7 @@ $$
 \operatorname{Var}(\hat{I}_n) = \frac{\sigma^2}{n},
 $$
 
-so the root-mean-square error is $\sigma / \sqrt{n}$, independent of dimension. This is the
-property that makes the method the only practical one for high-dimensional integration, and the
-$n^{-1/2}$ rate is the price.
+so the root-mean-square error is $\sigma / \sqrt{n}$, independent of dimension.
 
 #### The dimensional comparison
 
@@ -121,10 +158,23 @@ $N = \Theta(\varepsilon^{-d/p})$ points:
 The crossover at $d = 2p$ is the whole case for Monte Carlo, and it explains why the method is
 standard in finance and statistical physics and rare in one-dimensional quadrature.
 
+#### Quasi-Monte Carlo
+
+Low-discrepancy sequences replace random points with deterministic ones that fill the space more
+evenly, giving error $O(N^{-1}(\log N)^d)$ by the Koksma-Hlawka inequality for integrands of
+bounded variation in the sense of Hardy and Krause. The improvement is real for moderate $d$ and
+smooth integrands, and it disappears as $d$ grows because of the $(\log N)^d$ factor.
+
+Randomised quasi-Monte Carlo, which applies a random shift to the sequence, recovers an unbiased
+estimator with a computable error estimate while keeping most of the improvement. Without the
+randomisation there is no error estimate at all, which is the practical reason it is used.
+
 ### Concentration inequalities
 
 Concentration inequalities convert variance into probabilistic bounds, and they are what turn a
 Monte Carlo estimate into a statement with a confidence level.
+
+#### The basic bounds
 
 For independent $X_i$ with $|X_i| \le M$ and $\sum \operatorname{Var}(X_i) = v$, Bernstein's
 inequality gives
@@ -141,9 +191,17 @@ $$
 \le 2\exp\left( \frac{-2n^2t^2}{\sum_i (b_i - a_i)^2} \right).
 $$
 
-Bernstein's bound is the sharper of the two when the variance is small relative to the range,
-which is the usual case for a well-designed estimator, and it is what makes variance reduction
-pay twice: once in the estimate and once in the width of the interval.
+Bernstein's bound is the sharper of the two when the variance is small relative to the range, which
+is the usual case for a well-designed estimator. It is what makes variance reduction pay twice:
+once in the estimate and once in the width of the interval.
+
+#### Why they beat Chebyshev
+
+Chebyshev's inequality gives a bound decaying polynomially in $t$, and the exponential bounds above
+decay exponentially. The difference is what makes high-confidence statements affordable: to reach
+failure probability $\delta$, Chebyshev needs $n = \Omega(1/\delta)$ samples and Hoeffding needs
+$n = \Omega(\log(1/\delta))$. Confidence of $10^{-9}$ costs a billion samples under the first and a
+factor of about twenty under the second.
 
 ### Randomised numerical linear algebra
 
@@ -160,13 +218,38 @@ $$
 $$
 </Theorem>
 
-The optimal rank-$k$ error is $\big(\sum_{j>k}\sigma_j^2\big)^{1/2}$ by the Eckart and Young
-theorem of [Linear Algebra](/docs/mathematics/linear-algebra), so the randomised method is within
-a modest factor at cost $\Theta(mn(k+p))$ rather than $\Theta(mn^2)$.
+#### Why the structural gain exceeds the asymptotic one
 
-The practical significance is structural rather than merely asymptotic: the randomised algorithm
-touches $A$ only through matrix-matrix products, so it is compute-bound and parallel, whereas a
-classical rank-revealing factorization is a sequence of dependent level-2 operations.
+The optimal rank-$k$ error is $\big(\sum_{j>k}\sigma_j^2\big)^{1/2}$ by the Eckart and Young
+theorem of [Linear Algebra](/docs/mathematics/linear-algebra), so the randomised method is within a
+modest factor at cost $\Theta(mn(k+p))$ rather than $\Theta(mn^2)$.
+
+The more important gain is structural. The randomised algorithm touches $A$ only through
+matrix-matrix products, so it is compute-bound and parallel, whereas a classical rank-revealing
+factorization is a sequence of dependent level-2 operations. It also requires only one or two
+passes over $A$, which makes it applicable when $A$ does not fit in memory at all.
+
+#### Power iteration for slowly decaying spectra
+
+When the singular values decay slowly the basic method is inaccurate, and the standard remedy
+replaces $A\Omega$ by $(AA^{\mathsf{T}})^q A\Omega$, which raises the singular values to the power
+$2q+1$ and separates them. Two or three power iterations suffice in practice, each costing two more
+passes over $A$, and the orthonormalisation between iterations is required because the powers
+otherwise collapse numerically onto the dominant direction.
+
+### Random projections
+
+<Theorem title="Johnson and Lindenstrauss">
+For any set of $N$ points in $\mathbb{R}^d$ and any $\varepsilon \in (0,1)$, there is a map into
+$\mathbb{R}^k$ with $k = O(\varepsilon^{-2}\log N)$ preserving all pairwise distances to within a
+factor $1 \pm \varepsilon$, and a random Gaussian or sign matrix supplies one with high
+probability.
+</Theorem>
+
+The dimension of the target depends on the number of points and not on the original dimension,
+which is the property that makes sketching viable. The same construction underlies sketched least
+squares, where an $m \times n$ problem is replaced by an $O(n/\varepsilon^2) \times n$ one at the
+cost of a controlled loss in the residual.
 
 ## C++ representation
 
@@ -201,9 +284,21 @@ concept Distribution =
 }  // namespace hpc
 ```
 
+#### The fragility of reproducibility
+
 The third obligation is the one most often violated. Adding a single extra sample inside a loop,
-even one whose value is discarded, changes every subsequent value and therefore every result, which
-makes seemingly harmless refactoring a source of unreproducible output.
+even one whose value is discarded, changes every subsequent value and therefore every result. This
+makes seemingly harmless refactoring a source of unreproducible output, and it is the reason
+counter-based generators, whose output is a pure function of a key and a counter, are preferred
+where reproducibility matters.
+
+#### Distributions are not portable
+
+The standard specifies the engines exactly and the distributions only by their statistical
+properties, so `std::normal_distribution` may produce different values on different
+implementations from the same seed. Code that must reproduce results across toolchains implements
+its own transformations from the uniform generator rather than relying on the library
+distributions.
 
 ### Estimates carry their uncertainty
 
@@ -242,19 +337,23 @@ estimate monte_carlo(F&& integrand, G& generator, std::size_t n) {
 }  // namespace hpc
 ```
 
+#### Why Welford rather than sums of powers
+
 Welford's recurrence is used rather than accumulating $\sum x$ and $\sum x^2$, because the latter
 subtracts two large nearly equal quantities and loses all significance when the mean is large
-relative to the standard deviation. This is a cancellation problem of exactly the kind analysed in
-[Numerical Analysis](/docs/mathematics/numerical-analysis), and it appears in a routine that looks
-like bookkeeping rather than numerics.
+relative to the standard deviation. For $x$ near $10^6$ with standard deviation $1$, the sum of
+squares computation in binary64 retains about four digits of the variance; Welford's retains all of
+them. This is a cancellation problem of exactly the kind analysed in
+[Numerical Analysis](/docs/mathematics/numerical-analysis), appearing in a routine that looks like
+bookkeeping rather than numerics.
 
 ## Implementation
 
 ### Independent, reproducible streams
 
 Parallel Monte Carlo requires streams that are independent and reproducible. Splitting a single
-generator by seeding from a counter is the reliable construction; sharing one engine across
-threads is a data race, and seeding from the clock destroys reproducibility.
+generator by seeding from a counter is the reliable construction; sharing one engine across threads
+is a data race, and seeding from the clock destroys reproducibility.
 
 ```cpp
 #include <cstdint>
@@ -279,9 +378,13 @@ inline std::vector<std::mt19937_64> split_streams(std::uint64_t root_seed,
 }  // namespace hpc
 ```
 
+#### Counter-based generation
+
 Counter-based generators such as Philox are the better construction where they are available: the
-stream is a pure function of a key and a counter, so independence is by construction rather than
-by a seeding heuristic, there is no state to displace cache, and the generator vectorises.
+stream is a pure function of a key and a counter, so independence is by construction rather than by
+a seeding heuristic, there is no state to displace cache, the generator vectorises, and a
+simulation can be restarted at an arbitrary point without replaying the sequence. The last property
+is what makes checkpointing a stochastic simulation practical.
 
 ### Combining partial estimates
 
@@ -303,22 +406,41 @@ constexpr estimate combine(const estimate& a, const estimate& b) noexcept;
 }  // namespace hpc
 ```
 
+The associativity is what allows the combination to be used as the operator of a parallel
+reduction in the sense of [Algebra](/docs/mathematics/algebra), so a Monte Carlo run over $p$
+workers is a monoid reduction over partial estimates.
+
 ### Variance reduction
 
 Variance reduction changes the constant in a rate that cannot be improved, and it is therefore
-worth more than any implementation tuning. The four standard techniques:
+worth more than any implementation tuning.
 
-Control variates: subtract a correlated quantity with known mean, reducing the variance by a
-factor of $1 - \rho^2$ for correlation $\rho$.
+#### Control variates
 
-Antithetic variates: pair each sample with its reflection, which removes the odd component of the
-integrand exactly.
+Subtract a correlated quantity with known mean:
+$\hat{I} = \overline{f(X)} - c\big(\overline{g(X)} - \mathbb{E}g\big)$, with optimal
+$c = \operatorname{Cov}(f,g)/\operatorname{Var}(g)$, reducing the variance by the factor
+$1 - \rho^2$. A correlation of $0.95$ is a tenfold reduction in variance and hence a hundredfold
+reduction in samples.
 
-Importance sampling: sample from a distribution concentrated where the integrand is large, at the
-cost of a likelihood-ratio weight whose own variance must be controlled.
+#### Antithetic variates
 
-Stratification: partition the domain and allocate samples per stratum, which cannot increase the
-variance and typically reduces it substantially for smooth integrands.
+Pair each sample with its reflection $1 - U$, which removes the odd component of the integrand
+exactly and cannot increase the variance for monotone integrands. The cost is nothing beyond the
+pairing.
+
+#### Importance sampling
+
+Sample from a distribution concentrated where the integrand is large, weighting by the likelihood
+ratio. The variance can be reduced by orders of magnitude and can also be made infinite by a poor
+choice of proposal, which is why the weights are monitored: an effective sample size far below the
+nominal one is the signature of a bad proposal.
+
+#### Stratification
+
+Partition the domain and allocate samples per stratum. It cannot increase the variance, and with
+proportional allocation it removes the between-stratum component entirely, which for smooth
+integrands is most of it.
 
 ## Complexity
 
@@ -328,10 +450,14 @@ variance and typically reduces it substantially for smooth integrands.
     {operation: 'Quasi-Monte Carlo, smooth integrand', time: 'Θ(ε^{−1}(log n)^d)', space: 'Θ(d)', note: 'Degrades with dimension d'},
     {operation: 'Tensor-product quadrature', time: 'Θ(ε^{−d/p})', space: 'Θ(1)', note: 'p = order; infeasible for d above about 6'},
     {operation: 'Randomised rank-k SVD', time: 'Θ(mn(k+p))', space: 'Θ(m(k+p))', note: 'Against Θ(mn²) for a full SVD'},
+    {operation: 'Randomised SVD with q power iterations', time: 'Θ((2q+1)mn(k+p))', space: 'Θ(m(k+p))', note: 'Needed for slow spectral decay'},
+    {operation: 'Johnson–Lindenstrauss projection', time: 'Θ(Ndk)', space: 'Θ(Nk)', note: 'k = O(ε⁻² log N)'},
     {operation: 'Welford update', time: 'Θ(1)', space: 'Θ(1)', note: 'Numerically stable'},
     {operation: 'Sum-of-squares variance', time: 'Θ(1)', space: 'Θ(1)', note: 'Catastrophic cancellation'},
     {operation: 'Mersenne Twister sample', time: 'Θ(1), large state', space: '2.5 KB per stream', note: 'Displaces cache'},
-    {operation: 'Counter-based sample', time: 'Θ(1), no state', space: 'Θ(1)', note: 'Vectorises; reproducible by construction'},
+    {operation: 'Counter-based sample', time: 'Θ(1), no state', space: 'Θ(1)', note: 'Vectorises; restartable'},
+    {operation: 'Alias-method discrete sample', time: 'Θ(1)', space: 'Θ(k)', note: 'After Θ(k) preprocessing'},
+    {operation: 'Inverse-CDF discrete sample', time: 'Θ(log k)', space: 'Θ(k)', note: 'Binary search'},
   ]}
 />
 
@@ -340,57 +466,67 @@ variance and typically reduces it substantially for smooth integrands.
 ### Generation often dominates
 
 Random number generation is frequently the bottleneck in Monte Carlo codes, not the integrand.
-`std::mt19937_64` produces one 64-bit value per call with a 2.5 KB state that displaces useful
-data from cache. Counter-based generators produce a value from a key and a counter with no state,
+`std::mt19937_64` produces one 64-bit value per call with a 2.5 KB state that displaces useful data
+from cache. Counter-based generators produce a value from a key and a counter with no state,
 vectorise across lanes, and give reproducible streams by construction.
 
 ### Accuracy is expensive, so variance reduction is the lever
 
 The $n^{-1/2}$ rate means one more digit costs a hundredfold increase in samples. Variance
 reduction changes $\sigma^2$ and is therefore worth more than any implementation tuning, since it
-improves the constant in a rate that is information-theoretically fixed for the method class.
+improves the constant in a rate that is fixed for the method class.
 
 ### Scaling results from Monte Carlo prove little
 
-Monte Carlo parallelises with essentially no communication: each worker accumulates its own
-partial estimate and the reduction is $\Theta(p)$ at the end. This makes it the standard
-demonstration of near-linear scaling, and also the reason such demonstrations say little about a
-machine's behaviour on communication-bound problems.
+Monte Carlo parallelises with essentially no communication: each worker accumulates its own partial
+estimate and the reduction is $\Theta(p)$ at the end. This makes it the standard demonstration of
+near-linear scaling, and also the reason such demonstrations say little about a machine's behaviour
+on communication-bound problems.
 
 ### Sampling non-uniform distributions
 
 Sampling from non-uniform distributions is dominated by rejection rates and by transcendental
-function calls. The Ziggurat method for normal variates avoids both in the common case, at the
-cost of a table and a rare branch that breaks vectorization when it is taken. For vectorized code
-the Box-Muller transform is often preferable despite being slower scalar, because it is
-branch-free.
+function calls. The Ziggurat method for normal variates avoids both in the common case, at the cost
+of a table and a rare branch that breaks vectorization when it is taken. For vectorized code the
+Box-Muller transform is often preferable despite being slower scalar, because it is branch-free and
+therefore uniform across lanes.
+
+### Divergence across lanes
+
+Any rejection method diverges: some lanes accept and some do not, so a vectorized implementation
+either masks and retries, wasting work, or falls back to scalar. Methods with a fixed operation
+count per sample are worth a substantial factor in vectorized code even when they are slower in
+isolation, and this is the same lane-divergence argument that appears in
+[SIMD](/docs/high-performance/simd).
 
 ## Limitations
 
-Pseudorandom generators are deterministic. Statistical tests can detect bad ones but cannot
-certify a good one, and a generator adequate for simulation may be inadequate where adversarial
-inputs are possible.
+Pseudorandom generators are deterministic. Statistical tests can detect bad ones but cannot certify
+a good one, and a generator adequate for simulation may be inadequate where adversarial inputs are
+possible.
 
 Confidence intervals from the central limit theorem are asymptotic and are unreliable for
 heavy-tailed integrands, where the sample variance itself may not converge. Checking the tail
 behaviour of the integrand is part of using the method, not an optional refinement.
 
-Probabilistic guarantees for randomised algorithms hold with a stated failure probability, which
-is a different kind of statement from a deterministic bound and must be reported as such.
-Reporting a randomised result without its failure probability is the analogue of reporting a
-numerical result without its error bound.
+Probabilistic guarantees for randomised algorithms hold with a stated failure probability, which is
+a different kind of statement from a deterministic bound and must be reported as such.
 
 Reproducibility across machines is not automatic even with a fixed seed: floating-point summation
-order, thread counts and vector widths all affect the result. Where bitwise reproducibility is
-required, the reduction tree must be fixed independently of the hardware.
+order, thread counts, vector widths and library distribution implementations all affect the result.
+Where bitwise reproducibility is required, the reduction tree must be fixed and the distributions
+implemented locally.
+
+Importance sampling can increase the variance without any diagnostic unless the weights are
+monitored, and the failure is silent in exactly the regime where the method was expected to help.
 
 ## Related entries
 
 [Numerical Analysis](/docs/mathematics/numerical-analysis) for the statistical error model;
 [Numerical Integration](/docs/scientific-computing/numerical-integration) for the deterministic
 alternatives; [Linear Algebra](/docs/mathematics/linear-algebra) for the approximation theorem
-behind randomised factorization; [Parallelism](/docs/high-performance/parallelism) for the
-reduction structure.
+behind randomised factorization; [Algebra](/docs/mathematics/algebra) for the monoid structure of
+estimate combination; [Parallelism](/docs/high-performance/parallelism) for the reduction structure.
 
 ## References
 
@@ -402,3 +538,6 @@ reduction structure.
 - B. Welford, *Note on a Method for Calculating Corrected Sums of Squares and Products*,
   Technometrics 4(3), 1962.
 - J. Salmon, M. Moraes, R. Dror and D. Shaw, *Parallel Random Numbers: As Easy as 1, 2, 3*, SC11.
+- A. Owen, *Monte Carlo theory, methods and examples*, 2013.
+- G. Marsaglia and W. Tsang, *The Ziggurat Method for Generating Random Variables*, Journal of
+  Statistical Software 5(8), 2000.

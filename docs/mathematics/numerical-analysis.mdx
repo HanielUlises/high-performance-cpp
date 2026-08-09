@@ -32,7 +32,7 @@ together with signed zeros, subnormal numbers with $e = e_{\min}$ and $m < 2^{t-
 infinities, and quiet and signalling NaNs.
 </Definition>
 
-The parameters that matter:
+#### The formats in use
 
 | Format | $t$ | $u = 2^{-t}$ | Decimal digits | Range |
 | --- | --- | --- | --- | --- |
@@ -46,6 +46,24 @@ bfloat16 is the instructive entry: it has the range of binary32 and the precisio
 which is exactly the trade that machine-learning workloads want and that numerical linear algebra
 usually does not.
 
+#### Spacing and the meaning of the unit roundoff
+
+The spacing between consecutive representable numbers near $x$ is about $2u|x|$, so the relative
+spacing is constant across the range and the absolute spacing is not. This is why relative
+tolerances are the meaningful ones, and why an absolute tolerance appropriate near $1$ is either
+useless or unattainable near $10^{6}$ or $10^{-6}$.
+
+#### Subnormals, infinities, and NaN
+
+Subnormals fill the gap between zero and the smallest normal number, which preserves the property
+$x - y = 0 \iff x = y$. Without them, two distinct numbers could subtract to zero, and every
+algorithm that tests a difference against zero would be wrong.
+
+Infinities and NaN make the arithmetic total, so that a computation produces a value rather than a
+trap. The cost is that NaN is unordered with everything including itself, so equality is not
+reflexive on the full carrier, and every ordering-based algorithm has undefined behaviour when NaN
+is present.
+
 ### The standard model
 
 <Definition title="The standard model">
@@ -58,15 +76,29 @@ where $u$ is the unit roundoff. Square root satisfies the same bound, and the fu
 satisfies $\mathrm{fl}(ab + c) = (ab + c)(1 + \delta)$ with a single such $\delta$.
 </Definition>
 
-Two facts about the model are used constantly. It is a *relative* error bound, so it says nothing
-about quantities that are near zero by cancellation. And it holds for each operation
-independently, so an error analysis is an accumulation of $n$ such bounds, conventionally
-collected into
+#### What the model does and does not say
+
+It is a relative error bound, so it says nothing about quantities that are near zero by
+cancellation: an absolute error that is negligible relative to the operands can be enormous
+relative to their difference.
+
+It holds for each operation independently, so an error analysis is an accumulation of $n$ such
+bounds, conventionally collected into
 
 $$
 \prod_{i=1}^{n}(1 + \delta_i)^{\pm 1} = 1 + \theta_n, \qquad
 |\theta_n| \le \gamma_n = \frac{nu}{1 - nu}.
 $$
+
+It excludes overflow and underflow, so an analysis based on it is silent about the circumstances
+in which a computation fails catastrophically rather than inaccurately.
+
+#### Rounding modes
+
+Round-to-nearest with ties to even is the default and the one every bound in this reference
+assumes. The directed modes exist for interval arithmetic, where the lower and upper bounds must
+be rounded outward, and changing the mode globally invalidates the error-free transformations
+below, which is a good reason to change it only in a scoped and documented way.
 
 ### Conditioning and stability
 
@@ -80,7 +112,7 @@ An algorithm $\hat{f}$ is *backward stable* when for every $x$ there is a pertur
 $\hat{f}(x) = f(x + \delta x)$ and $\lVert \delta x \rVert = O(u)\lVert x \rVert$.
 </Definition>
 
-The two combine into the statement that governs all of numerical computation:
+#### The governing inequality
 
 $$
 \frac{\lVert \hat{f}(x) - f(x) \rVert}{\lVert f(x) \rVert} \lesssim \kappa(f,x)\, u.
@@ -98,11 +130,37 @@ residual, and composes: a sequence of backward stable steps is backward stable w
 added. Designing for backward stability and reporting conditioning separately is therefore the
 only arrangement in which both quantities are available.
 
+#### Mixed and forward stability
+
+Some algorithms are neither backward stable nor useless. An algorithm is *mixed stable* when it
+computes nearly the right answer to nearly the right problem, and *forward stable* when its
+forward error is comparable to that of a backward stable method without itself being backward
+stable. Fast matrix multiplication is the standard example of the latter: Strassen is norm-wise
+forward stable and not componentwise backward stable.
+
+#### Condition numbers of the standard problems
+
+| Problem | Condition number |
+| --- | --- |
+| $x + y$ | $(\lvert x\rvert + \lvert y\rvert)/\lvert x + y\rvert$ |
+| $xy$, $x/y$ | $1$ |
+| $\sqrt{x}$ | $1/2$ |
+| $\exp(x)$ | $\lvert x \rvert$ |
+| $\log(x)$ | $1/\lvert \log x \rvert$ |
+| Root of $f$ | $1/\lvert f'(x^{*}) \rvert$ |
+| $Ax = b$ | $\kappa(A)$ |
+| Eigenvalue of symmetric $A$ | $1$ |
+| Eigenvalue of general $A$ | $1/\lvert y^{*}x \rvert$ for unit left and right vectors |
+
+Two rows carry most of the practical weight. Addition is the only elementary operation that can be
+ill conditioned, which is why cancellation dominates error analysis. And symmetric eigenvalues are
+perfectly conditioned while general ones are not, which is why the symmetric case admits far
+stronger guarantees.
+
 ## Motivation
 
 Every performance argument in this reference is conditional on producing the right answer, and
 floating-point arithmetic makes "the right answer" a quantitative rather than a binary notion.
-Three practical questions follow.
 
 ### Which reformulations are legitimate
 
@@ -115,21 +173,28 @@ the error bound is understood, and unacceptable when it is not. The essay
 
 Mixed-precision methods, computing a factorization in binary32 and refining in binary64, halve
 memory traffic and double vector throughput. Whether they deliver the accuracy of the higher
-precision depends on the conditioning, and iterative refinement supplies the criterion:
-refinement converges while $\kappa(A)\, u_{\text{low}} < 1$.
+precision depends on the conditioning, and iterative refinement supplies the criterion: refinement
+converges while $\kappa(A)\, u_{\text{low}} < 1$.
 
 ### When a result is meaningless
 
 A computed residual smaller than $u \lVert A \rVert \lVert x \rVert$ carries no information, and an
-iteration driven past that point is fitting noise. Recognising the floor is part of using a
-method, not an optional refinement.
+iteration driven past that point is fitting noise. Recognising the floor is part of using a method,
+not an optional refinement.
+
+### Why the worst case is still worth computing
+
+Worst-case bounds are pessimistic by roughly $\sqrt{n}$, since rounding errors behave
+statistically. They are computed anyway because they establish the scaling: a bound of $\gamma_n$
+against $\gamma_{\log n}$ is the difference between an algorithm that degrades with size and one
+that does not, and that distinction survives the pessimism.
 
 ## Formal formulation
 
 ### Summation
 
-Summation is the canonical example, and the one whose bounds are quoted throughout this
-reference. For the sequential sum of $n$ terms, the computed result satisfies
+Summation is the canonical example, and the one whose bounds are quoted throughout this reference.
+For the sequential sum of $n$ terms, the computed result satisfies
 
 $$
 \hat{s}_n = \sum_{i=1}^{n} x_i (1 + \theta_i), \qquad |\theta_i| \le \gamma_{n},
@@ -141,8 +206,16 @@ $$
 \left| \hat{s}_n - \sum_i x_i \right| \le \gamma_{n-1} \sum_i |x_i|.
 $$
 
-The ratio $\sum |x_i| / |\sum x_i|$ is the condition number of summation. For terms of like sign
-it equals one and the sum is computed to full accuracy; for cancelling terms it is unbounded.
+#### The condition number of summation
+
+The ratio $\sum |x_i| / |\sum x_i|$ is the condition number of summation. For terms of like sign it
+equals one and the sum is computed to full accuracy; for cancelling terms it is unbounded, and no
+summation algorithm can produce an accurate result from inaccurate inputs.
+
+This is the cleanest instance of the general principle: the accuracy attainable is set by the
+problem, and the algorithm determines only whether that accuracy is achieved.
+
+#### The methods compared
 
 | Method | Error bound | Cost |
 | --- | --- | --- |
@@ -170,10 +243,18 @@ For representable $a, b$ with $p = \mathrm{fl}(ab)$, the error $e = ab - p$ is r
 equals $\mathrm{fma}(a, b, -p)$ exactly.
 </Proposition>
 
+#### What they are used for
+
 These are the primitives on which compensated summation, compensated dot products and
-double-double arithmetic are built. They are correct only under round-to-nearest and are
-destroyed by compiler options permitting reassociation, which is the strongest single argument
-against enabling such options globally.
+double-double arithmetic are built. A double-double number is an unevaluated sum of two
+floating-point numbers whose exponents do not overlap, giving about 32 decimal digits at roughly
+twenty times the cost of binary64 arithmetic and without hardware support.
+
+#### The fragility
+
+They are correct only under round-to-nearest and are destroyed by compiler options permitting
+reassociation, which is the strongest single argument against enabling such options globally. A
+build that turns on fast-math does not make these routines slower; it makes them return zero.
 
 ### Cancellation
 
@@ -184,11 +265,22 @@ quantities is exact, and what it reveals is error already present in the operand
 If $y/2 \le x \le 2y$ for representable $x, y > 0$, then $x - y$ is computed exactly.
 </Proposition>
 
-The standard remedies are reformulations that avoid forming the cancelling difference. Computing
-$x^2 - y^2$ as $(x-y)(x+y)$; computing $\sqrt{x+1} - \sqrt{x}$ as $1/(\sqrt{x+1}+\sqrt{x})$;
-computing the smaller root of a quadratic from the larger by $x_1 x_2 = c/a$ rather than from the
-formula with the cancelling numerator. Each replaces an unstable expression with an algebraically
-equal, numerically stable one.
+#### Standard reformulations
+
+The remedies are reformulations that avoid forming the cancelling difference:
+
+| Unstable form | Stable form |
+| --- | --- |
+| $x^2 - y^2$ | $(x-y)(x+y)$ |
+| $\sqrt{x+1} - \sqrt{x}$ | $1/(\sqrt{x+1}+\sqrt{x})$ |
+| $1 - \cos x$ | $2\sin^2(x/2)$ |
+| $\log(1+x)$ for small $x$ | `std::log1p(x)` |
+| $e^{x} - 1$ for small $x$ | `std::expm1(x)` |
+| Smaller quadratic root | $x_2 = c/(a x_1)$ from the larger root |
+| Variance by $\sum x^2 - n\bar{x}^2$ | Welford's recurrence |
+
+Each replaces an unstable expression with an algebraically equal, numerically stable one. The
+presence of `log1p` and `expm1` in the standard library is the language acknowledging this list.
 
 ### Linear systems
 
@@ -199,10 +291,29 @@ $$
 \lVert \Delta A \rVert_\infty \le \gamma_{3n} \rho_n \lVert A \rVert_\infty,
 $$
 
-where $\rho_n$ is the growth factor. The bound on $\rho_n$ is $2^{n-1}$, attained only by
-contrived matrices; in practice $\rho_n$ grows like $n^{1/2}$, which is why the method is used
-despite its exponential worst case. The gap between the worst case and the observed behaviour is
-one of the oldest open questions in the subject.
+where $\rho_n$ is the growth factor.
+
+#### The growth factor
+
+The bound on $\rho_n$ is $2^{n-1}$, attained only by contrived matrices; in practice $\rho_n$ grows
+like $n^{1/2}$, which is why the method is used despite its exponential worst case. The gap
+between the worst case and the observed behaviour is one of the oldest open questions in the
+subject, and it is the reason partial pivoting is universal while complete pivoting, whose bound is
+$\Theta(n^{1/2}\log n)$, is not.
+
+### Iterative refinement
+
+<Proposition title="Refinement in mixed precision">
+Let $\hat{x}$ solve $Ax = b$ using a factorization computed at unit roundoff $u_{\text{low}}$,
+and refine by computing $r = b - A\hat{x}$ at precision $u_r$, solving $Ad = r$ with the same
+factorization, and setting $\hat{x} \leftarrow \hat{x} + d$. The iteration converges while
+$\kappa(A)\,u_{\text{low}} < 1$, and the limiting forward error is $O(\kappa(A) u_r)$.
+</Proposition>
+
+The proposition is what makes low-precision factorization respectable: the factorization is done
+once at low cost, and the accuracy of the working precision is recovered by $\Theta(n^2)$ work per
+refinement step against $\Theta(n^3)$ for the factorization. Computing the residual in a precision
+higher than the working one extends the range of $\kappa$ for which the method applies.
 
 ## C++ representation
 
@@ -236,6 +347,32 @@ constexpr bool subtraction_is_exact(T x, T y) noexcept {
 }  // namespace hpc
 ```
 
+#### Comparing by units in the last place
+
+For tests that must be tight, a tolerance in units in the last place is more informative than a
+relative one, because it counts representable numbers rather than a fraction:
+
+```cpp
+#include <bit>
+#include <cmath>
+#include <cstdint>
+
+namespace hpc {
+
+// Distance in representable numbers. Requires both operands finite and of the
+// same sign; the mapping from bit pattern to ordinal is monotone there.
+inline std::uint64_t ulp_distance(double a, double b) noexcept {
+    const auto ia = std::bit_cast<std::int64_t>(a);
+    const auto ib = std::bit_cast<std::int64_t>(b);
+    return static_cast<std::uint64_t>(ia > ib ? ia - ib : ib - ia);
+}
+
+}  // namespace hpc
+```
+
+A routine documented as accurate to 4 ulp makes a stronger and more checkable claim than one
+documented as accurate to $10^{-15}$, because the second depends on the magnitude of the result.
+
 ### The error-free transformations
 
 ```cpp
@@ -265,9 +402,9 @@ inline two_product_result two_product(double a, double b) noexcept {
 }  // namespace hpc
 ```
 
-Building these requires that the compiler be prohibited from simplifying `(a - (s - bb))` to
-zero. The requirement belongs in the build configuration and should be asserted there, since a
-silent change to the flags removes the correctness of every routine built on them.
+Building these requires that the compiler be prohibited from simplifying `(a - (s - bb))` to zero.
+The requirement belongs in the build configuration and should be asserted there, since a silent
+change to the flags removes the correctness of every routine built on them.
 
 ### Stating what a routine guarantees
 
@@ -336,10 +473,41 @@ constexpr double kahan_sum(std::span<const double> xs) noexcept {
 }  // namespace hpc
 ```
 
-### Iterative refinement
+### A compensated dot product
 
-Refinement recovers accuracy lost to a lower working precision, and it is the mechanism that makes
-mixed-precision factorization respectable:
+```cpp
+#include <cmath>
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// Ogita, Rump and Oishi: the result is as accurate as a dot product computed
+// in twice the working precision and rounded once, at about five times the
+// arithmetic of the naive form.
+inline double compensated_dot(std::span<const double> x,
+                              std::span<const double> y) noexcept
+{
+    double s = 0.0;
+    double c = 0.0;
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        const double p = x[i] * y[i];
+        const double e = std::fma(x[i], y[i], -p);   // exact product error
+        const double t = s + p;
+        const double b = t - s;
+        c += ((s - (t - b)) + (p - b)) + e;          // exact sum error
+        s = t;
+    }
+    return s + c;
+}
+
+}  // namespace hpc
+```
+
+On a bandwidth-bound kernel the extra arithmetic hides under the loads, so the accuracy is often
+obtained at almost no cost. This is the case worth checking for before accepting a poor bound.
+
+### Iterative refinement
 
 ```cpp
 #include <cstddef>
@@ -364,14 +532,10 @@ struct refinement_result {
 }  // namespace hpc
 ```
 
-The residual must be computed in at least the working precision, and computing it in higher
-precision extends the range of $\kappa$ for which refinement converges. This is the one place
-where extended precision buys something that cannot be obtained more cheaply.
-
 ### Testing numerical code
 
 Exact comparison is not available, and a tolerance chosen to make a test pass is a defect in the
-test. The two defensible practices:
+test. Three defensible practices:
 
 Compare against a higher-precision reference on small inputs, with a tolerance derived from the
 stated bound rather than from observation.
@@ -379,6 +543,10 @@ stated bound rather than from observation.
 Check the backward error on large inputs: form the residual, compare it against the bound the
 specification claims, and fail if it exceeds it. This is universally applicable and requires no
 reference solution.
+
+Test on inputs designed to be ill conditioned, with the expected loss of accuracy stated in
+advance. A routine that passes only on well-conditioned data has been tested on the cases where
+every implementation succeeds.
 
 ## Complexity
 
@@ -391,7 +559,9 @@ reference solution.
     {operation: 'two_sum', time: '6 flops', space: 'Θ(1)', note: 'Exact; no branch'},
     {operation: 'two_product with fma', time: '2 flops', space: 'Θ(1)', note: 'Exact'},
     {operation: 'Compensated dot product', time: 'about 10n flops', space: 'Θ(1)', note: 'As if computed in twice the precision'},
+    {operation: 'Double-double arithmetic', time: '10 to 25× binary64', space: '2× storage', note: 'About 32 decimal digits'},
     {operation: 'Iterative refinement, one step', time: 'Θ(n²)', space: 'Θ(n)', note: 'Recovers accuracy while κu < 1'},
+    {operation: 'Scaled norm against naive', time: 'about 2× slower', space: 'Θ(1)', note: 'Avoids spurious overflow'},
   ]}
   unit="n terms, binary64"
 />
@@ -403,22 +573,28 @@ reference solution.
 Denormal operands are handled by microcode on many implementations, at a penalty of tens to
 hundreds of cycles per operation. A kernel that decays into the denormal range, such as a damped
 oscillation or a decaying exponential, can slow by an order of magnitude with no change in
-instruction count. Flush-to-zero removes the penalty and changes the arithmetic; the choice is
-made deliberately and recorded, not left to ambient compiler flags.
+instruction count.
+
+Flush-to-zero removes the penalty and changes the arithmetic, including the property that
+$x - y = 0$ implies $x = y$. The choice is made deliberately and recorded, not left to ambient
+compiler flags.
 
 ### Division and square root
 
 Division and square root have latencies of ten to twenty cycles and are not pipelined at full
-rate. Replacing $n$ divisions by one division and $n$ multiplications is a standard
-transformation that changes the error bound by one additional rounding per element: usually
-acceptable, always to be stated.
+rate. Replacing $n$ divisions by one division and $n$ multiplications is a standard transformation
+that changes the error bound by one additional rounding per element: usually acceptable, always to
+be stated.
+
+Reciprocal-estimate instructions with Newton refinement are faster still and less accurate; they
+belong behind an explicit opt-in rather than behind a global flag.
 
 ### Fused multiply-add
 
-The fused operation improves both speed and accuracy, computing $ab + c$ with a single rounding.
-It also changes results relative to separate operations, so a routine whose correctness depends on
-the absence of fusion (`two_sum` depends on the absence of reassociation, `two_product` on the
-presence of fusion) must be compiled with contraction controlled explicitly.
+The fused operation improves both speed and accuracy, computing $ab + c$ with a single rounding. It
+also changes results relative to separate operations, so a routine whose correctness depends on
+the absence of fusion, such as `two_sum`, and one that depends on its presence, such as
+`two_product`, must be compiled with contraction controlled explicitly.
 
 ### Reduced precision as a bandwidth optimisation
 
@@ -433,7 +609,14 @@ compute-bound kernels it is the vector-width ratio.
 Compensated summation performs about four times the arithmetic of the naive form. On a
 bandwidth-bound reduction the extra operations hide entirely under the loads, so the accuracy is
 obtained at almost no cost. This is the standard case where the better algorithm is also the
-cheaper one, and it is worth checking for before accepting a bound.
+cheaper one.
+
+### Reproducibility costs something
+
+Bitwise-reproducible reductions require a fixed reduction tree independent of thread count and
+vector width, which forfeits some of the scheduling freedom that makes reductions fast. The cost
+is typically 10 to 30 percent, and it is worth paying only where reproducibility is a requirement
+rather than a preference.
 
 ## Limitations
 
@@ -446,12 +629,16 @@ rounding errors behave statistically. They establish scaling, not magnitudes.
 
 The standard model excludes overflow and underflow, so an analysis based on it is silent about the
 circumstances in which a computation fails catastrophically. Scaling arguments must be made
-separately, and they are the reason production norm routines are written with an explicit scaling
-pass rather than as a plain sum of squares.
+separately, and they are why production norm routines are written with an explicit scaling pass
+rather than as a plain sum of squares.
 
 Comparison of floating-point results has no tolerance-free formulation. Every equality test in
 numerical code is a decision about scale, and the decision is part of the specification of the
 routine.
+
+Condition numbers are themselves computed quantities, usually estimated rather than computed, and
+an estimate that under-reports by a factor of two changes the number of digits one is entitled to
+trust by less than one, which is why the practice is acceptable.
 
 ## Related entries
 
@@ -472,3 +659,4 @@ questions.
 - T. Ogita, S. Rump and S. Oishi, *Accurate Sum and Dot Product*, SIAM J. Sci. Comput. 26(6), 2005.
 - E. Carson and N. J. Higham, *Accelerating the Solution of Linear Systems by Iterative Refinement
   in Three Precisions*, SIAM J. Sci. Comput. 40(2), 2018.
+- W. Kahan, *Further Remarks on Reducing Truncation Errors*, CACM 8(1), 1965.

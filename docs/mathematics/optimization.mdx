@@ -2,7 +2,7 @@
 title: Optimization
 sidebar_label: Optimization
 sidebar_position: 5
-description: "Convexity, optimality conditions, and the convergence rates that determine the cost of descent methods."
+description: "Convexity, optimality conditions, duality, and the convergence rates that determine the cost of descent methods."
 ---
 
 # Optimization
@@ -28,9 +28,27 @@ A point $x^{*}$ is a local minimiser when $f(x^{*}) \le f(x)$ for all feasible $
 neighbourhood, and a global minimiser when the inequality holds on all of $\Omega$.
 </Definition>
 
-The problem class is determined by three attributes, and every algorithmic decision follows from
-them: whether $\Omega$ is all of $\mathbb{R}^n$ or is constrained; whether $f$ is smooth; and
-whether $f$ is convex.
+#### The three attributes that determine everything
+
+The problem class is fixed by three attributes, and every algorithmic decision follows from them:
+whether $\Omega$ is all of $\mathbb{R}^n$ or is constrained; whether $f$ is smooth; and whether $f$
+is convex.
+
+| Smooth | Convex | Constrained | Method family |
+| --- | --- | --- | --- |
+| yes | yes | no | Gradient, accelerated, quasi-Newton, Newton |
+| yes | no | no | Same, with globalisation; only stationarity guaranteed |
+| no | yes | no | Subgradient, proximal, bundle |
+| yes | yes | yes | Projected gradient, interior point, active set |
+| yes | no | yes | SQP, augmented Lagrangian |
+| no | no | any | Derivative-free, stochastic search; weak guarantees |
+
+#### Existence
+
+A continuous $f$ attains its minimum on a compact $\Omega$. On an unbounded domain the standard
+substitute is coercivity, $f(x) \to \infty$ as $\lVert x\rVert \to \infty$, which is what
+regularisation supplies: adding $\tfrac{\lambda}{2}\lVert x\rVert^2$ makes an otherwise unbounded
+problem coercive and strongly convex simultaneously.
 
 ### Convexity
 
@@ -46,9 +64,22 @@ and $\mu$-strongly convex when $f - \tfrac{\mu}{2}\lVert \cdot \rVert^2$ is conv
 For convex problems every local minimiser is global, which is the property that makes convex
 optimisation tractable and its absence that makes the general case hard.
 
+#### First-order and second-order characterisations
+
+For differentiable $f$, convexity is equivalent to the gradient inequality
+
+$$
+f(y) \ge f(x) + \nabla f(x)^{\mathsf{T}}(y - x),
+$$
+
+which says the function lies above every tangent plane, and for twice-differentiable $f$ to
+$\nabla^2 f \succeq 0$. The gradient inequality is the more useful of the two computationally: it
+provides a valid lower bound on the optimum from any evaluated point and gradient, which is the
+basis of cutting-plane and bundle methods.
+
 #### Smoothness and strong convexity as two-sided bounds
 
-For twice-differentiable $f$, the two hypotheses used throughout are
+The two hypotheses used throughout are
 
 $$
 \mu I \preceq \nabla^2 f(x) \preceq L I,
@@ -65,6 +96,15 @@ is the condition number of the problem, and it plays exactly the role that $\kap
 [Linear Algebra](/docs/mathematics/linear-algebra): for a quadratic objective
 $f(x) = \tfrac{1}{2}x^{\mathsf{T}}Ax - b^{\mathsf{T}}x$ the two coincide.
 
+#### Operations that preserve convexity
+
+Recognising convexity is usually done by construction rather than by verifying the definition.
+Non-negative weighted sums, pointwise maxima, composition with an affine map, and partial
+minimisation over a convex set all preserve convexity; the composition $g \circ h$ is convex when
+$g$ is convex and non-decreasing and $h$ is convex. This calculus is what makes disciplined convex
+programming possible: a problem assembled from these rules is convex by construction, and no
+separate proof is required.
+
 ### Duality
 
 For the constrained problem with $g_i(x) \le 0$ and $h_j(x) = 0$, the Lagrangian is
@@ -74,14 +114,20 @@ $$
 $$
 
 and the dual function is $q(\lambda, \nu) = \inf_x \mathcal{L}(x, \lambda, \nu)$, which is concave
-regardless of whether $f$ is convex. Weak duality, $q(\lambda,\nu) \le f(x^{*})$ for all feasible
-dual variables, holds always and provides a computable lower bound; strong duality, equality at
-the optimum, holds for convex problems under a constraint qualification such as Slater's
-condition.
+regardless of whether $f$ is convex.
+
+#### Weak and strong duality
+
+Weak duality, $q(\lambda,\nu) \le f(x^{*})$ for all feasible dual variables, holds always and
+provides a computable lower bound. Strong duality, equality at the optimum, holds for convex
+problems under a constraint qualification such as Slater's condition.
+
+#### The certificate
 
 The computational value of duality is the certificate: a feasible primal point and a feasible dual
-point together bound the distance to optimality, which is the only rigorous stopping criterion
-available for constrained problems.
+point together bound the distance to optimality by the duality gap $f(x) - q(\lambda,\nu)$. This is
+the only rigorous stopping criterion available for constrained problems, and it is what
+interior-point methods report.
 
 ## Motivation
 
@@ -92,21 +138,29 @@ projection by minimising distance, an eigenvalue by minimising a Rayleigh quotie
 
 ### The design question is which derivatives to require
 
-The design question in every case is which derivative information to require. A method using only
-$f$ converges slowly and applies everywhere. A method using $\nabla f$ converges linearly with a
-rate set by the conditioning. A method using $\nabla^2 f$ converges quadratically near the
-solution and costs $\Theta(n^3)$ per step. The cost of *supplying* derivatives is a separate
-question answered by
-[Automatic Differentiation](/docs/scientific-computing/automatic-differentiation), and answering
-it changes the trade: when the gradient costs a small multiple of the objective rather than $n$
-evaluations, gradient methods dominate everywhere.
+A method using only $f$ converges slowly and applies everywhere. A method using $\nabla f$
+converges linearly with a rate set by the conditioning. A method using $\nabla^2 f$ converges
+quadratically near the solution and costs $\Theta(n^3)$ per step.
+
+The cost of supplying derivatives is a separate question answered by
+[Automatic Differentiation](/docs/scientific-computing/automatic-differentiation), and answering it
+changes the trade entirely: when the gradient costs a small multiple of the objective rather than
+$n$ evaluations, gradient methods dominate everywhere.
 
 ### Scaling dominates method selection
 
-A rescaling of variables that reduces $\kappa$ from $10^6$ to $10^2$ reduces the iteration count
-of gradient descent by a factor of $10^4$. No change of method compares, and no implementation
-change compares. Where the natural scaling of a problem is known it should be applied before any
-other decision is taken.
+A rescaling of variables that reduces $\kappa$ from $10^6$ to $10^2$ reduces the iteration count of
+gradient descent by a factor of $10^4$. No change of method compares, and no implementation change
+compares. Where the natural scaling of a problem is known it should be applied before any other
+decision is taken.
+
+### The problem is usually not the one posed
+
+Regularisation, reformulation and change of variables are part of the method rather than
+preprocessing. Adding $\tfrac{\lambda}{2}\lVert x\rVert^2$ makes an ill-posed problem coercive and
+strongly convex; taking logarithms of positive variables removes a constraint and often improves
+the conditioning; eliminating linear constraints by a change of basis reduces the dimension. Each
+changes the problem class, and the change is usually worth more than the choice of solver.
 
 ## Formal formulation
 
@@ -122,6 +176,8 @@ $$
 with $\nabla^2 f(x^{*}) \succ 0$ together with the first condition sufficient for a strict local
 minimum.
 
+#### The constrained case
+
 For constrained problems with $g_i(x) \le 0$ and $h_j(x) = 0$, the Karush-Kuhn-Tucker conditions
 hold at a local minimiser satisfying a constraint qualification:
 
@@ -133,7 +189,17 @@ g_i(x^{*}) \le 0, \quad h_j(x^{*}) = 0, \quad \lambda_i \ge 0, \quad \lambda_i g
 $$
 
 The last condition, complementary slackness, is what active-set methods enumerate and what
-interior-point methods relax to $\lambda_i g_i = -\tau$ for a barrier parameter $\tau \to 0$.
+interior-point methods relax to $\lambda_i g_i = -\tau$ for a barrier parameter $\tau \to 0$. The
+relaxation is the entire idea of the interior-point family: an exponential combinatorial search is
+replaced by a smooth path traced by Newton's method.
+
+#### Constraint qualifications
+
+The KKT conditions require a qualification, such as linear independence of the active constraint
+gradients, and it can fail. When it does, the conditions may not hold at a minimiser, and a solver
+that tests them reports failure at a correct answer. This is rare in practice and unrecognisable
+from the output, which is a reason to prefer formulations whose constraints are known to be
+regular.
 
 ### Rates for first-order methods
 
@@ -150,6 +216,8 @@ Convergence rates on an $L$-smooth objective, with $\kappa = L/\mu$ in the stron
 | Subgradient | convex, non-smooth | $O(1/\sqrt{k})$ |
 | Stochastic gradient | convex, bounded variance | $O(1/\sqrt{k})$, or $O(1/k)$ strongly convex |
 
+#### The lower bound
+
 <Theorem title="Lower bound for first-order methods">
 For the class of $L$-smooth $\mu$-strongly convex functions, any method whose iterates lie in the
 span of the gradients observed so far requires
@@ -157,9 +225,9 @@ $\Omega(\sqrt{\kappa}\,\log(1/\varepsilon))$ iterations to reach accuracy $\vare
 accelerated method attains this bound.
 </Theorem>
 
-The theorem is why acceleration matters and why no amount of ingenuity within the first-order
-class will do better: the $\sqrt{\kappa}$ is a property of the problem class, not of the methods
-tried so far. Improving beyond it requires second-order information or additional structure.
+The theorem is why acceleration matters and why no amount of ingenuity within the first-order class
+will do better: the $\sqrt{\kappa}$ is a property of the problem class, not of the methods tried so
+far. Improving beyond it requires second-order information or additional structure.
 
 #### Reading the rates
 
@@ -172,6 +240,68 @@ and only when second derivatives are available. Practical solvers therefore comb
 convergent first-order or quasi-Newton phase with a locally quadratic Newton phase, and the
 transition is governed by the same safeguarding logic described in
 [Analysis](/docs/mathematics/analysis).
+
+#### Why acceleration is fragile
+
+The accelerated method is not a descent method: $f(x_{k+1})$ may exceed $f(x_k)$, and the iterates
+oscillate. It is also sensitive to errors in the gradient, accumulating them rather than damping
+them, which is why accelerated methods are used with exact gradients and adaptive restart, and why
+plain gradient descent is often preferred when gradients are noisy.
+
+### Line searches
+
+<Definition title="Wolfe conditions">
+For a descent direction $d$ at $x$, a step $t > 0$ satisfies the Wolfe conditions when
+$$
+f(x + td) \le f(x) + c_1 t\, \nabla f(x)^{\mathsf{T}} d, \qquad
+\nabla f(x + td)^{\mathsf{T}} d \ge c_2 \nabla f(x)^{\mathsf{T}} d,
+$$
+with $0 < c_1 < c_2 < 1$, typically $c_1 = 10^{-4}$ and $c_2 = 0.9$.
+</Definition>
+
+The first is sufficient decrease and the second sufficient curvature. The pair guarantees that the
+BFGS update preserves positive definiteness, which is the reason a plain backtracking search,
+satisfying only the first, is inadequate for quasi-Newton methods even though it suffices for
+gradient descent.
+
+### Quasi-Newton updates
+
+<Definition title="The secant condition">
+Given $s = x_{k+1} - x_k$ and $y = \nabla f_{k+1} - \nabla f_k$, a quasi-Newton approximation
+$B_{k+1}$ to the Hessian satisfies the secant condition $B_{k+1}s = y$.
+</Definition>
+
+The condition does not determine $B_{k+1}$ for $n > 1$, and the families of updates differ in what
+they add: symmetry, positive definiteness, and minimality of the change in some norm. BFGS is the
+member that preserves symmetry and positive definiteness and minimises a weighted Frobenius change,
+and its inverse form
+
+$$
+H_{k+1} = \left(I - \frac{s y^{\mathsf{T}}}{y^{\mathsf{T}}s}\right) H_k
+\left(I - \frac{y s^{\mathsf{T}}}{y^{\mathsf{T}}s}\right) + \frac{s s^{\mathsf{T}}}{y^{\mathsf{T}}s}
+$$
+
+is positive definite whenever $y^{\mathsf{T}}s > 0$, which the curvature condition guarantees.
+
+### Trust regions
+
+The trust-region subproblem is
+
+$$
+\min_{\lVert p \rVert \le \Delta} \; m_k(p) = f_k + \nabla f_k^{\mathsf{T}} p + \tfrac{1}{2} p^{\mathsf{T}} B_k p,
+$$
+
+and the region is updated from the agreement ratio
+
+$$
+\rho_k = \frac{f(x_k) - f(x_k + p_k)}{m_k(0) - m_k(p_k)},
+$$
+
+expanding when $\rho_k$ is near one and contracting when it is small.
+
+The advantage over line search is that $B_k$ need not be positive definite, so genuine negative
+curvature is exploited rather than modified away. This matters for non-convex problems, where the
+negative curvature direction is exactly the direction that escapes a saddle.
 
 ### Non-smooth and composite problems
 
@@ -189,9 +319,13 @@ x_{k+1} = \operatorname{prox}_{t g}\big(x_k - t\nabla f(x_k)\big), \qquad
 \operatorname{prox}_{tg}(v) = \arg\min_u \Big( g(u) + \tfrac{1}{2t}\lVert u - v\rVert^2 \Big).
 $$
 
-The method retains the rates of the smooth case when the proximal operator has a closed form,
-which it does for the norms and indicator functions that occur in practice. This is why
-non-smooth regularisation is cheap and general non-smoothness is not.
+#### Why the composite form is the useful one
+
+The method retains the rates of the smooth case when the proximal operator has a closed form, and
+it does for the cases that occur: for $g = \lambda\lVert \cdot\rVert_1$ the operator is
+soft-thresholding, for an indicator function it is projection onto the set, and for
+$\lambda \lVert\cdot\rVert_2$ it is a shrinkage. This is why non-smooth regularisation is cheap
+and general non-smoothness is not.
 
 ## C++ representation
 
@@ -216,6 +350,14 @@ concept DifferentiableObjective = Objective<F> &&
         f.gradient(x, g);          // g <- grad f(x)
     };
 
+// Evaluating value and gradient together is usually much cheaper than
+// separately, since they share intermediate quantities.
+template <class F>
+concept FusedObjective = DifferentiableObjective<F> &&
+    requires(const F& f, std::span<const double> x, std::span<double> g) {
+        { f.value_and_gradient(x, g) } -> std::convertible_to<double>;
+    };
+
 template <class F>
 concept TwiceDifferentiableObjective = DifferentiableObjective<F> &&
     requires(const F& f, std::span<const double> x, std::span<const double> v,
@@ -227,17 +369,40 @@ concept TwiceDifferentiableObjective = DifferentiableObjective<F> &&
 //   S1. value and gradient are consistent: gradient is the derivative of value.
 //   S2. Both are pure functions of x.
 //   S3. hessian_vector(x, v) is the directional derivative of the gradient.
+//   S4. f is bounded below on the region explored.
 
 }  // namespace hpc
 ```
 
 #### Why the Hessian appears only as an action
 
-Requiring only a Hessian-vector product, rather than the Hessian itself, is the difference
-between an $\Theta(n^2)$ storage requirement and an $\Theta(n)$ one, and it is what makes
-truncated-Newton methods applicable at large $n$. The product is computable exactly by
-forward-over-reverse automatic differentiation at a small multiple of the cost of $f$, so the
-weaker requirement is also the cheaper one to satisfy.
+Requiring only a Hessian-vector product, rather than the Hessian itself, is the difference between
+an $\Theta(n^2)$ storage requirement and an $\Theta(n)$ one, and it is what makes truncated-Newton
+methods applicable at large $n$. The product is computable exactly by forward-over-reverse
+automatic differentiation at a small multiple of the cost of $f$, so the weaker requirement is also
+the cheaper one to satisfy.
+
+#### Constraints as a separate concept
+
+```cpp
+namespace hpc {
+
+// Feasible sets whose projection is cheap: boxes, balls, simplices, half-spaces.
+// Projected methods need only this, and it keeps them independent of any
+// general constraint machinery.
+template <class C>
+concept ProjectableSet = requires(const C& set, std::span<const double> x,
+                                  std::span<double> projected) {
+    set.project(x, projected);
+    { set.contains(x) } -> std::convertible_to<bool>;
+};
+
+}  // namespace hpc
+```
+
+Separating projection from general constraints keeps the common case cheap: box constraints occur
+in most practical problems, their projection is a clamp, and requiring a general constraint
+interface for them would be a substantial and unnecessary tax.
 
 ### Reporting the reason for termination
 
@@ -253,6 +418,7 @@ enum class termination {
     iteration_limit,
     evaluation_limit,
     line_search_failure,    // no acceptable step: bad gradient or non-smoothness
+    unbounded,              // objective decreasing without bound
 };
 
 struct optimize_result {
@@ -267,7 +433,7 @@ struct optimize_result {
 ```
 
 `line_search_failure` is the informative case: it usually means the supplied gradient does not
-match the supplied objective, which is a defect in the caller's code, not in the solver.
+match the supplied objective, which is a defect in the caller's code rather than in the solver.
 
 ## Implementation
 
@@ -332,10 +498,7 @@ optimize_result gradient_descent(const F& f, std::span<double> x,
 ```
 
 The line search is what makes the method robust. A fixed step size requires knowledge of $L$ and
-fails silently when the estimate is wrong. The Armijo condition alone guarantees sufficient
-decrease; adding the curvature condition of Wolfe is required for the BFGS update to preserve
-positive definiteness, and the implementation of that is developed in
-[Optimization](/docs/scientific-computing/optimization).
+fails silently when the estimate is wrong.
 
 ### Scale-invariant termination
 
@@ -346,7 +509,8 @@ positive definiteness, and the implementation of that is developed in
 //   ||grad f(x_k)||_inf <= eps_g * max(1, |f(x_k)|)
 //
 // together with tests on relative step and relative objective change, so that
-// a flat region and a converged point are distinguished.
+// a flat region and a converged point are distinguished. The three tests have
+// different remedies and are therefore reported as different terminations.
 ```
 
 ### Checking the gradient
@@ -372,7 +536,33 @@ bool gradient_is_consistent(const F& f, std::span<const double> x,
 ```
 
 This check costs two objective evaluations and detects the single most common defect in
-optimisation code. It belongs in the development path of every objective, not in the solver.
+optimisation code. A directional derivative is used rather than the full gradient because it costs
+two evaluations instead of $2n$, and a random direction detects an error in any component with
+probability one.
+
+### Projected gradient for simple constraints
+
+```cpp
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// For a set with a cheap projection, the entire modification to a descent
+// method is to project after each step. The convergence theory carries over
+// with the same rates when the set is convex.
+template <DifferentiableObjective F, ProjectableSet C>
+optimize_result projected_gradient(const F& f, const C& set,
+                                   std::span<double> x,
+                                   double tolerance,
+                                   std::size_t max_iterations);
+
+}  // namespace hpc
+```
+
+The stationarity test changes: $\lVert \nabla f\rVert$ is replaced by the norm of the projected
+gradient, $\lVert x - P_C(x - \nabla f(x))\rVert$, which vanishes exactly at a constrained
+stationary point and reduces to the unconstrained test when no constraint is active.
 
 ## Complexity
 
@@ -384,9 +574,13 @@ optimisation code. It belongs in the development path of every objective, not in
     {operation: 'Accelerated, convex only', time: 'Θ(1/√ε)', space: 'Θ(n)', note: 'Against Θ(1/ε) unaccelerated'},
     {operation: 'Newton step, dense Hessian', time: 'Θ(n³)', space: 'Θ(n²)', note: 'Cholesky of the Hessian'},
     {operation: 'Truncated Newton step', time: 'Θ(m · cost(Hv))', space: 'Θ(n)', note: 'm inner CG iterations'},
+    {operation: 'BFGS step, dense', time: 'Θ(n²)', space: 'Θ(n²)', note: 'Infeasible above n about 10⁴'},
     {operation: 'L-BFGS step, memory m', time: 'Θ(mn)', space: 'Θ(mn)', note: 'Typically m = 5 to 20'},
     {operation: 'Proximal gradient step', time: 'Θ(n) + cost(prox)', space: 'Θ(n)', note: 'prox is closed-form for the usual g'},
+    {operation: 'Projection onto a box', time: 'Θ(n)', space: 'Θ(1)', note: 'A clamp per component'},
+    {operation: 'Projection onto the simplex', time: 'Θ(n log n)', space: 'Θ(n)', note: 'Sort-based; Θ(n) expected by selection'},
     {operation: 'Subgradient method to ε', time: 'Θ(1/ε²)', space: 'Θ(n)', note: 'Non-smooth; no line search'},
+    {operation: 'Interior point, per iteration', time: 'Θ(n³) or sparse solve', space: 'Θ(n²)', note: 'Θ(√n log(1/ε)) iterations'},
   ]}
   unit="n variables"
 />
@@ -396,25 +590,32 @@ optimisation code. It belongs in the development path of every objective, not in
 ### Storage decides feasibility before speed does
 
 For large $n$, the storage of curvature information decides feasibility. L-BFGS with $m = 10$
-stores $20n$ doubles against $n^2$ for a dense Hessian; at $n = 10^6$ that is $160$ MB against
-$8$ TB. The method is chosen by what fits, and only then by what converges fastest.
+stores $20n$ doubles against $n^2$ for a dense Hessian; at $n = 10^6$ that is $160$ MB against $8$
+TB. The method is chosen by what fits, and only then by what converges fastest.
 
 ### The objective dominates the solver
 
-Per-iteration cost is usually dominated by the objective and gradient evaluation rather than by
-the optimiser's linear algebra. The profitable optimisations are therefore in the user's
-function: vectorising the residual evaluation, reusing factorizations across line-search trials,
-and avoiding recomputation of $f$ at points where the gradient was already formed.
+Per-iteration cost is usually dominated by the objective and gradient evaluation rather than by the
+optimiser's linear algebra. The profitable optimisations are therefore in the user's function:
+vectorising the residual evaluation, reusing factorizations across line-search trials, and avoiding
+recomputation of $f$ at points where the gradient was already formed.
 
 Evaluating value and gradient together is typically 30 to 50 percent cheaper than evaluating them
-separately, because they share intermediates. An interface that offers only separate accessors
-forces the caller to pay twice.
+separately, because they share intermediates. An interface offering only separate accessors forces
+the caller to pay twice, which is why `FusedObjective` exists in the hierarchy above.
+
+### Memory traffic inside the solver
+
+The L-BFGS two-loop recursion touches $\Theta(mn)$ data per iteration in a streaming pattern, so
+its cost is bandwidth rather than arithmetic. Keeping the $2m$ history vectors contiguous and
+allocated once, rather than as a container of separately allocated vectors, is worth a measurable
+fraction of the iteration time at large $n$.
 
 ### Conditioning again
 
-Diagonal preconditioning is nearly free and should be applied before any tuning. For problems
-with heterogeneous variable scales, which is most problems arising from physical models, it is
-worth more than the choice between gradient descent and a quasi-Newton method.
+Diagonal preconditioning is nearly free and should be applied before any tuning. For problems with
+heterogeneous variable scales, which is most problems arising from physical models, it is worth
+more than the choice between gradient descent and a quasi-Newton method.
 
 ### Stochastic methods change the trade
 
@@ -422,8 +623,16 @@ Line searches parallelise poorly, since the trials are sequential by constructio
 evaluations over data parallelise well. For empirical-risk problems this asymmetry is why
 stochastic methods dominate: they replace an exact gradient over $N$ samples by a cheap estimate,
 trading convergence rate for a per-iteration cost reduced by a factor of $N/b$ for batch size $b$.
-The resulting method converges at $O(1/\sqrt{k})$ rather than linearly, and wins anyway because
-$k$ costs so much less.
+The resulting method converges at $O(1/\sqrt{k})$ rather than linearly, and wins anyway because $k$
+costs so much less.
+
+### Warm starting
+
+Many applications solve a sequence of related problems: a continuation path, a time-stepping loop,
+a regularisation path. Starting each solve from the previous solution typically reduces the
+iteration count by an order of magnitude, and it is the single most effective optimisation
+available in such settings. It also invalidates any timing measured from a cold start, which is
+why benchmarks for these solvers report the whole sequence rather than one instance.
 
 ## Limitations
 
@@ -431,17 +640,20 @@ Convergence theory for non-convex problems guarantees only stationarity, and sta
 include saddles and maxima. Second-order information distinguishes them at $\Theta(n^3)$ cost, or
 randomised perturbation escapes them with high probability at negligible cost.
 
-Rates are asymptotic and their constants involve $L$ and $\mu$, which are rarely known. They
-inform method selection, that is, accelerate when $\kappa$ is large and use Newton when $n$ is
-small and $f$ is smooth, rather than iteration budgets.
+Rates are asymptotic and their constants involve $L$ and $\mu$, which are rarely known. They inform
+method selection rather than iteration budgets.
 
 Finite-difference gradients halve the available precision and cost $n+1$ evaluations, making them
 unsuitable for large $n$. A gradient-based method fed inaccurate gradients stalls at an accuracy
 floor set by the derivative error, roughly the square root of the gradient's relative error.
 
 Constrained problems require machinery, namely active sets, interior-point barriers and augmented
-Lagrangians, whose behaviour is dominated by the constraint structure rather than by the
-objective. None of the unconstrained rates transfers directly.
+Lagrangians, whose behaviour is dominated by the constraint structure rather than by the objective.
+None of the unconstrained rates transfers directly.
+
+Global optimisation of a non-convex problem is intractable in general: no method can certify a
+global minimum without exhausting the domain or exploiting structure, and methods that claim to
+find one are reporting the best point found rather than a certified optimum.
 
 ## Related entries
 
@@ -449,7 +661,8 @@ objective. None of the unconstrained rates transfers directly.
 [Linear Algebra](/docs/mathematics/linear-algebra) for the linear solves inside Newton steps;
 [Automatic Differentiation](/docs/scientific-computing/automatic-differentiation) for exact
 derivatives; [Optimization](/docs/scientific-computing/optimization) for the computational
-treatment and the implementation details.
+treatment and the implementation details;
+[Probability](/docs/mathematics/probability) for the stochastic case.
 
 ## References
 
@@ -460,3 +673,4 @@ treatment and the implementation details.
   1983.
 - A. Beck and M. Teboulle, *A Fast Iterative Shrinkage-Thresholding Algorithm*, SIAM J. Imaging
   Sciences 2(1), 2009.
+- A. Conn, N. Gould and P. Toint, *Trust-Region Methods*, SIAM, 2000.

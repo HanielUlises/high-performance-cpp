@@ -59,8 +59,11 @@
   --ifm-code-background: rgba(23, 23, 26, 0.055);
   --ifm-pre-background: #fafaf7;
   --ifm-link-decoration: none;
-  --ifm-transition-fast: 0ms;
-  --ifm-transition-slow: 0ms;
+  /* Kept short rather than zero: Docusaurus renders the sidebar expand
+     control on transitionend, and a zero-duration transition never fires it,
+     which leaves a collapsed sidebar unopenable. */
+  --ifm-transition-fast: 120ms;
+  --ifm-transition-slow: 200ms;
 
   --ifm-menu-color: var(--hpc-ink-muted);
   --ifm-menu-color-active: var(--hpc-ink);
@@ -319,6 +322,21 @@ article .markdown {
   counter-reset: hpc-h4;
 }
 
+.theme-doc-markdown.markdown h2 {
+  padding-left: 2.2rem;
+  text-indent: -2.2rem;
+}
+
+.theme-doc-markdown.markdown h3 {
+  padding-left: 2.9rem;
+  text-indent: -2.9rem;
+}
+
+.theme-doc-markdown.markdown h4 {
+  padding-left: 3.5rem;
+  text-indent: -3.5rem;
+}
+
 .theme-doc-markdown.markdown h2::before {
   counter-increment: hpc-h2;
   content: counter(hpc-h2) '\2003';
@@ -496,6 +514,14 @@ button[class*='copyButton'] {
   color: var(--hpc-ink-muted);
   display: block;
   padding: 0.16rem 0;
+  /* Hanging indent: wrapped lines align under the text, not under the
+     generated section number. The per-level widths below set the measure. */
+  text-indent: 0;
+}
+
+.table-of-contents__link::before {
+  display: inline-block;
+  text-align: left;
 }
 
 .table-of-contents__link--active,
@@ -508,8 +534,14 @@ button[class*='copyButton'] {
   counter-reset: toc-h3;
 }
 
+.table-of-contents > li > .table-of-contents__link {
+  padding-left: 1.35rem;
+}
+
 .table-of-contents > li > .table-of-contents__link::before {
-  content: counter(toc-h2) '\2002';
+  content: counter(toc-h2);
+  width: 1.35rem;
+  margin-left: -1.35rem;
   color: var(--hpc-ink-faint);
   font-variant-numeric: lining-nums;
 }
@@ -519,8 +551,14 @@ button[class*='copyButton'] {
   counter-reset: toc-h4;
 }
 
+.table-of-contents > li > ul > li > .table-of-contents__link {
+  padding-left: 2rem;
+}
+
 .table-of-contents > li > ul > li > .table-of-contents__link::before {
-  content: counter(toc-h2) '.' counter(toc-h3) '\2002';
+  content: counter(toc-h2) '.' counter(toc-h3);
+  width: 2rem;
+  margin-left: -2rem;
   color: var(--hpc-ink-faint);
   font-variant-numeric: lining-nums;
 }
@@ -529,14 +567,29 @@ button[class*='copyButton'] {
   counter-increment: toc-h4;
 }
 
+.table-of-contents > li > ul > li > ul > li > .table-of-contents__link {
+  padding-left: 2.75rem;
+}
+
 .table-of-contents > li > ul > li > ul > li > .table-of-contents__link::before {
-  content: counter(toc-h2) '.' counter(toc-h3) '.' counter(toc-h4) '\2002';
+  content: counter(toc-h2) '.' counter(toc-h3) '.' counter(toc-h4);
+  width: 2.75rem;
+  margin-left: -2.75rem;
   color: var(--hpc-ink-faint);
   font-variant-numeric: lining-nums;
 }
 
+.table-of-contents ul {
+  padding-left: 0;
+}
+
 .table-of-contents > li > ul > li > ul {
   font-size: 0.96em;
+}
+
+.table-of-contents__link {
+  hyphens: none;
+  overflow-wrap: break-word;
 }
 
 .theme-doc-toc-desktop {
@@ -786,4 +839,107 @@ article header h2 a {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--hpc-ink-faint);
+}
+
+/* --- Collapsed sidebar --------------------------------------------------- */
+
+/* When collapsed, the container narrows to a strip but does not clip, so the
+   full-width menu leaks its first characters into the margin. Clip it, and
+   hide the menu outright, leaving only the expand affordance. */
+[class*='docSidebarContainerHidden'] {
+  overflow: hidden !important;
+  border-right-color: transparent !important;
+}
+
+[class*='docSidebarContainerHidden'] .menu,
+[class*='docSidebarContainerHidden'] .theme-doc-sidebar-menu {
+  visibility: hidden;
+}
+
+[class*='docSidebarContainerHidden'] [class*='expandButton'] {
+  visibility: visible;
+  background: transparent;
+  border-right: 1px solid var(--hpc-rule);
+}
+
+[class*='docSidebarContainerHidden'] [class*='expandButton']:hover {
+  background: var(--hpc-paper-sunk);
+}
+
+/* The collapse control at the foot of the sidebar. */
+[class*='collapseSidebarButton'] {
+  background: var(--hpc-paper) !important;
+  border-top: 1px solid var(--hpc-rule-hair) !important;
+  border-radius: 0;
+  color: var(--hpc-ink-faint);
+}
+
+[class*='collapseSidebarButton']:hover {
+  background: var(--hpc-paper-sunk) !important;
+  color: var(--hpc-ink);
+}
+
+/* --- Scrollbars: a single hairline, no track, no arrows ------------------ */
+
+:root {
+  --hpc-scroll-thumb: rgba(23, 23, 26, 0.26);
+  --hpc-scroll-thumb-hover: rgba(23, 23, 26, 0.5);
+}
+
+[data-theme='dark'] {
+  --hpc-scroll-thumb: rgba(222, 220, 214, 0.28);
+  --hpc-scroll-thumb-hover: rgba(222, 220, 214, 0.55);
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hpc-scroll-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Transparent borders with content-box clipping leave a 2px bar inside a
+   10px gutter: the thumb reads as a single rule rather than a control. */
+*::-webkit-scrollbar-thumb {
+  background-color: var(--hpc-scroll-thumb);
+  background-clip: content-box;
+  border: 4px solid transparent;
+  border-radius: 0;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--hpc-scroll-thumb-hover);
+  border-width: 3px;
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+/* The table of contents and the sidebar get a narrower bar still, so the
+   rule does not compete with the hairline borders beside it. */
+.table-of-contents::-webkit-scrollbar,
+.menu::-webkit-scrollbar,
+[class*='sidebarViewport']::-webkit-scrollbar,
+.theme-code-block pre::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.table-of-contents::-webkit-scrollbar-thumb,
+.menu::-webkit-scrollbar-thumb,
+[class*='sidebarViewport']::-webkit-scrollbar-thumb,
+.theme-code-block pre::-webkit-scrollbar-thumb {
+  border-width: 3px;
 }
