@@ -41,8 +41,8 @@ schedule the pieces, and what the coordination costs.
 
 The answers are constrained by two laws. Amdahl's law bounds the speed-up on a fixed problem
 by the reciprocal of the serial fraction. Gustafson's observation is that the serial fraction
-usually shrinks as the problem grows, so the relevant question is often weak scaling — fixed
-work per processor — rather than strong scaling.
+usually shrinks as the problem grows, so the relevant question is often weak scaling (fixed
+work per processor) rather than strong scaling.
 
 $$
 S_{\text{strong}}(p) = \frac{1}{s + (1-s)/p}, \qquad
@@ -208,8 +208,8 @@ perfectly inside a program that spends 30 percent of its time reading input scal
 ## Limitations
 
 Speed-up is bounded by the parallelism $T_1/T_\infty$, which is a property of the algorithm.
-An algorithm with a long dependence chain — sequential Gauss–Seidel, an implicit time
-integrator without a parallel solver — does not become parallel through implementation effort,
+An algorithm with a long dependence chain (sequential Gauss–Seidel, an implicit time
+integrator without a parallel solver) does not become parallel through implementation effort,
 and the response is a different algorithm with different numerical properties.
 
 Parallel results are usually not bitwise reproducible, since the reduction order depends on
@@ -218,8 +218,8 @@ which costs flexibility and sometimes performance.
 
 Measurement of parallel code is harder than of serial code: interference from other processes,
 frequency scaling under multi-core load, and NUMA effects all vary between runs. The protocol
-in [Conventions](/docs/conventions) — affinity pinned, frequency fixed or reported, minimum or
-median as stated — exists for this reason.
+in [Conventions](/docs/conventions) (affinity pinned, frequency fixed or reported, minimum or
+median as stated) exists for this reason.
 
 ## Related entries
 

@@ -33,8 +33,8 @@ behaviour for types in $\mathcal{C} \setminus \mathcal{S}$, and nothing diagnose
 The gap is not a corner case; it is where the content of a generic interface lives. Three
 examples with consequences:
 
-`std::sort` requires a strict weak ordering. Supplying a comparison that is not — a comparison
-using `<=`, or one over floating-point values including NaN — produces not a mis-sorted range
+`std::sort` requires a strict weak ordering. Supplying a comparison that is not (a comparison
+using `<=`, or one over floating-point values including NaN) produces not a mis-sorted range
 but, in common implementations, writes outside the range, because the implementation relies on
 the ordering to bound its scan.
 
@@ -153,8 +153,8 @@ bounds given in [Numerical Analysis](/docs/mathematics/numerical-analysis).
 Four means of discharging a semantic obligation are used, in decreasing order of strength.
 
 Encode it in the type. Where a property can be established on construction and preserved by
-every operation — normalisation of a rational, positive definiteness by construction from a
-Cholesky factor, sortedness by a wrapper type that only permits sorted construction — the
+every operation (normalisation of a rational, positive definiteness by construction from a
+Cholesky factor, sortedness by a wrapper type that only permits sorted construction) the
 obligation becomes an invariant and disappears from the interface.
 
 Test it as a property. Randomised property testing over a generator of representative values
@@ -162,13 +162,13 @@ catches violations of algebraic laws with high probability and costs little. Thi
 treatment for the laws above, and the tests live beside the concept rather than beside the
 algorithm.
 
-Check it as a precondition. Value-level properties — a matrix argument being symmetric, an index
-being in range, two spans not overlapping — are checkable at runtime, and in C++26 as contracts.
+Check it as a precondition. Value-level properties (a matrix argument being symmetric, an index
+being in range, two spans not overlapping) are checkable at runtime, and in C++26 as contracts.
 Debug-only checking is the standard compromise where the check is $O(n)$ and the operation is
 $O(n^2)$.
 
-State and rely on it. Where none of the above applies — associativity of a user-supplied
-operation, the complexity of a user's `operator[]` — the obligation is documented as a numbered
+State and rely on it. Where none of the above applies (associativity of a user-supplied
+operation, the complexity of a user's `operator[]`) the obligation is documented as a numbered
 requirement and its violation declared undefined behaviour of the component.
 
 ## Complexity
@@ -191,7 +191,7 @@ unconditionally: an $\Theta(1)$ overlap check before an $\Theta(n)$ kernel, an $
 sortedness check before an $\Theta(n \log n)$ search structure build.
 
 Checks of the same order as the operation are debug-only, and their presence or absence must not
-change behaviour — a check that is skipped in release builds must guard a precondition whose
+change behaviour, a check that is skipped in release builds must guard a precondition whose
 violation is undefined, not one the component handles.
 
 Probabilistic checks are the practical treatment for operator properties. Verifying
@@ -206,7 +206,7 @@ property can be maintained as an invariant.
 ## Limitations
 
 Property testing establishes nothing with certainty. It samples a value space, and the values
-that violate a law are frequently the extreme ones — infinities, denormals, empty ranges — which
+that violate a law are frequently the extreme ones (infinities, denormals, empty ranges) which
 a naive generator produces rarely. Generators are written to include them deliberately.
 
 Some obligations are untestable in principle. Complexity requirements cannot be checked by

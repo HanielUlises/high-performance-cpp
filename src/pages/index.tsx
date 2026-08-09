@@ -33,7 +33,7 @@ const parts: Part[] = [
     to: '/docs/mathematics',
     title: 'Mathematics',
     summary:
-      'The structures that generic components are written against — algebraic, analytic and probabilistic — stated in the form used later as concept requirements.',
+      'The structures that generic components are written against (algebraic, analytic and probabilistic) stated in the form used later as concept requirements.',
     topics: [
       'Algebra',
       'Linear algebra',

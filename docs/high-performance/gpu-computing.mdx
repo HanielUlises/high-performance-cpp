@@ -29,8 +29,8 @@ scratchpad in place of a transparent cache hierarchy.
 
 The architectural difference produces a difference in achievable rates of roughly an order of
 magnitude in both floating-point throughput and memory bandwidth, at comparable power. For a
-kernel that fits the model — regular, data-parallel, with arithmetic intensity above the
-device's ridge point — this is available.
+kernel that fits the model (regular, data-parallel, with arithmetic intensity above the
+device's ridge point) this is available.
 
 The qualification is the entire content of the entry. Kernels that do not fit run
 substantially worse than on a CPU, and the mismatches are structural rather than incidental:
@@ -48,7 +48,7 @@ $$
 but the ridge point $I^\* = P_{\max}/B$ is far to the right: for a device at 10 TFLOP/s and 1
 TB/s, $I^\* = 10$ flop/byte, against 5–10 for a CPU with much lower absolute values. A kernel
 with $I = 1$ achieves at most a tenth of peak, and the achievable *absolute* rate may still
-exceed the CPU's — which is why bandwidth-bound kernels are still worth offloading, and why
+exceed the CPU's, which is why bandwidth-bound kernels are still worth offloading, and why
 their speed-up is the bandwidth ratio rather than the flop ratio.
 
 Occupancy governs latency hiding. With $L$ cycles of memory latency and $W$ lanes issuing one
@@ -58,7 +58,7 @@ $$
 \text{resident groups} \ge \frac{L}{T \cdot \text{independent instructions per group}},
 $$
 
-so a kernel using many registers per thread — reducing the number of resident groups — may be
+so a kernel using many registers per thread (reducing the number of resident groups) may be
 latency-exposed despite perfect memory access patterns. The trade between register use and
 occupancy is the characteristic tuning decision.
 
@@ -112,7 +112,7 @@ struct axpy_kernel<device_execution> {
 }  // namespace hpc
 ```
 
-The element-wise body — the mathematics — is written once as a `constexpr` function usable in
+The element-wise body (the mathematics) is written once as a `constexpr` function usable in
 both, and the per-space code contains only the launch and the indexing:
 
 ```cpp
@@ -147,7 +147,7 @@ Launches are asynchronous and dependencies are explicit. Synchronising with the 
 each kernel serialises the device and exposes the launch latency, of order 5–10 microseconds,
 on every step.
 
-Shared memory — the programmer-managed scratchpad — is used exactly as cache blocking is used
+Shared memory (the programmer-managed scratchpad) is used exactly as cache blocking is used
 on a CPU, and for the same reason: it converts a bandwidth-bound tile traversal into a
 compute-bound one. The block size is bounded by the scratchpad capacity per group, which is
 the device's analogue of the capacity constraint in
@@ -174,8 +174,8 @@ single-threaded baselines; against a vectorized, multi-threaded, cache-blocked C
 implementation the honest figures for bandwidth-bound kernels are the bandwidth ratio, roughly
 5–10×, and for compute-bound dense kernels the flop ratio, roughly 10–20×.
 
-Problem size determines whether offload pays at all. Below a threshold — typically $10^5$ to
-$10^6$ elements for a simple kernel — the launch latency and transfer cost exceed the
+Problem size determines whether offload pays at all. Below a threshold (typically $10^5$ to
+$10^6$ elements for a simple kernel) the launch latency and transfer cost exceed the
 computation, and the CPU wins outright.
 
 Precision has a larger effect than on CPUs. Consumer devices have binary64 rates between
@@ -184,8 +184,7 @@ may be slower than on the CPU. The precision requirement is therefore establishe
 conditioning analysis before the device is chosen.
 
 Atomics on device memory are considerably more expensive than the per-group reductions that
-replace them. A two-stage reduction — within a group using the scratchpad, then across groups
-— is the standard construction and avoids global atomics almost entirely.
+replace them. A two-stage reduction (within a group using the scratchpad, then across groups) is the standard construction and avoids global atomics almost entirely.
 
 ## Limitations
 
@@ -199,8 +198,8 @@ substantial factor on another. Portability layers reduce the problem to tuning p
 rather than eliminating it.
 
 Debugging and profiling are weaker than on the host, and floating-point results differ from
-CPU results for the same reasons vectorized results do — different reduction orders, different
-use of fused multiply-add — so validation is against a tolerance derived from the error
+CPU results for the same reasons vectorized results do (different reduction orders, different
+use of fused multiply-add) so validation is against a tolerance derived from the error
 analysis.
 
 Memory capacity on the device is a hard limit, and problems exceeding it require explicit

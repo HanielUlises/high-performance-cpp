@@ -31,8 +31,8 @@ $d$ when it is exact for every polynomial of degree at most $d$.
 
 Integrals appear wherever a continuous quantity is reduced to a number: expectations,
 inner products in finite-element assembly, transforms, and normalisation constants. The
-question is always the same — how many integrand evaluations are required for a given
-accuracy — because the integrand is usually the expensive part.
+question is always the same (how many integrand evaluations are required for a given
+accuracy) because the integrand is usually the expensive part.
 
 The answer depends on the smoothness of the integrand and the dimension of the domain. For
 smooth integrands in low dimension, Gaussian rules converge geometrically and a handful of
@@ -67,8 +67,8 @@ E_{\text{Simpson}} &= -\frac{(b-a)h^4}{180} f^{(4)}(\xi),
 $$
 
 so their orders are 2, 2 and 4. For periodic integrands integrated over a period, the composite
-trapezoid rule converges geometrically rather than at order 2 — the Euler–Maclaurin correction
-terms vanish — which is why it is the rule of choice for Fourier and contour integrals.
+trapezoid rule converges geometrically rather than at order 2 (the Euler–Maclaurin correction
+terms vanish) which is why it is the rule of choice for Fourier and contour integrals.
 
 In $d$ dimensions a tensor-product rule with $m$ points per axis uses $m^d$ points and attains
 error $O(m^{-p})$ for a rule of order $p$, giving
@@ -166,8 +166,8 @@ of singular integrands.
 
 Nodes and weights are computed once. Small rules are computed during translation, as in
 [Compile-Time Programming](/docs/modern-cpp/compile-time-programming); large ones are computed
-at startup by the Golub–Welsch algorithm — an eigenvalue problem for a symmetric tridiagonal
-matrix — or by Newton iteration on the orthogonal polynomial.
+at startup by the Golub–Welsch algorithm (an eigenvalue problem for a symmetric tridiagonal
+matrix) or by Newton iteration on the orthogonal polynomial.
 
 ## Complexity
 
@@ -197,7 +197,7 @@ simultaneously is straightforward when the integrand is a closed-form expression
 impossible when it is a black box with internal branching. Where the integrand is itself a
 simulation, the parallelism is across intervals rather than across nodes.
 
-Adaptive routines have a sequential structure — the queue is shared — and parallelise by
+Adaptive routines have a sequential structure (the queue is shared) and parallelise by
 processing several intervals concurrently at the cost of some wasted refinement. The waste is
 bounded by the number of workers and is usually acceptable.
 

@@ -26,7 +26,7 @@ $$
 The product is associative and distributive over addition, and is not commutative.
 </Definition>
 
-Conformability — that the inner extents agree — is a hypothesis of the definition, and in the
+Conformability (that the inner extents agree) is a hypothesis of the definition, and in the
 implementation it becomes either a deduction constraint or a precondition, depending on whether
 the extents are static.
 
@@ -104,7 +104,7 @@ inline void gemm_naive(
 ```
 
 Interchanging the two inner loops fixes the stride, and is legal only because addition is being
-reassociated — obligation S1 above:
+reassociated; obligation S1 above:
 
 ```cpp
 #include <cstddef>
@@ -236,7 +236,7 @@ own panel plus the shared packed $A$.
 | Conflict signature | Sweep $n$ in steps of 8 across 512 and 1024 |
 
 Sizes are swept from $n = 64$ to the largest that fits memory, with square and rectangular
-shapes, since a kernel tuned for square matrices frequently degrades on tall-and-skinny ones —
+shapes, since a kernel tuned for square matrices frequently degrades on tall-and-skinny ones,
 which is the shape that appears inside blocked factorizations.
 
 ## Limitations
@@ -253,7 +253,7 @@ Strassen's algorithm reduces the exponent and loses the componentwise bound, rep
 norm-wise one; it is not used here without stating the change.
 
 `Ring<T>` admits types for which the loop-invariant hoisting of `A[i, p]` is unprofitable, and
-admits non-commutative multiplication, which the implementation respects — but the reassociation
+admits non-commutative multiplication, which the implementation respects, but the reassociation
 of *addition* is assumed and unchecked.
 
 ## Related entries

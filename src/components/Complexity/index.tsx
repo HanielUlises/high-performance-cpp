@@ -33,7 +33,7 @@ export default function Complexity({
     <figure className={styles.figure}>
       <figcaption className={styles.caption}>
         {title}
-        {unit ? <span className={styles.unit}> — {unit}</span> : null}
+        {unit ? <span className={styles.unit}>; {unit}</span> : null}
       </figcaption>
       <table className={styles.table}>
         <thead>
@@ -51,8 +51,8 @@ export default function Complexity({
                 {row.operation}
               </th>
               <td className={styles.cost}>{row.time}</td>
-              {hasSpace ? <td className={styles.cost}>{row.space ?? '—'}</td> : null}
-              {hasNote ? <td>{row.note ?? '—'}</td> : null}
+              {hasSpace ? <td className={styles.cost}>{row.space ?? 'n/a'}</td> : null}
+              {hasNote ? <td>{row.note ?? 'n/a'}</td> : null}
             </tr>
           ))}
         </tbody>

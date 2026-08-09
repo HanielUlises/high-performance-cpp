@@ -48,7 +48,7 @@ methods require steps proportional to the fastest timescale even when that compo
 decayed, and implicit methods, which cost a nonlinear solve per step, are cheaper overall by
 orders of magnitude.
 
-Structured problems — Hamiltonian systems, systems with conserved quantities — where the
+Structured problems (Hamiltonian systems, systems with conserved quantities) where the
 qualitative behaviour over long times matters more than the pointwise error: symplectic and
 other structure-preserving integrators keep the invariants bounded where general-purpose
 methods drift.
@@ -75,8 +75,8 @@ $$
 h \le \frac{C}{|\lambda_{\max}|},
 $$
 
-and for a system with eigenvalues spanning many orders of magnitude — the definition of
-stiffness — this is dictated by the fastest mode regardless of accuracy requirements.
+and for a system with eigenvalues spanning many orders of magnitude (the definition of
+stiffness) this is dictated by the fastest mode regardless of accuracy requirements.
 
 <Theorem title="Dahlquist barriers">
 An $A$-stable linear multistep method has order at most 2, and the second-order $A$-stable
@@ -168,7 +168,7 @@ orders of magnitude, which is the common case in chemical kinetics and multiphys
 Rejected steps are retried with the reduced size rather than accepted with a warning. A solver
 that accepts a step failing its own error test has no meaningful tolerance.
 
-Dense output — a continuous interpolant of the solution within a step — is provided by
+Dense output (a continuous interpolant of the solution within a step) is provided by
 methods with an interpolation polynomial of matching order, and is what allows event detection
 and output at prescribed times without restricting the step size.
 
@@ -206,7 +206,7 @@ struct newton_policy {
 The third and fifth rows are the case for implicit methods: for a system with $|\lambda_{\max}|
 = 10^6$ integrated to $T = 1$ with an accuracy permitting $h = 10^{-2}$, the explicit method
 takes $10^6$ steps and the implicit one takes $10^2$, each perhaps a hundred times more
-expensive — a net factor of a hundred.
+expensive, a net factor of a hundred.
 
 ## Performance considerations
 
@@ -214,8 +214,8 @@ Cost per step is dominated by the right-hand side for non-stiff problems and by 
 algebra for stiff ones. The optimisation targets differ accordingly: vectorizing the right-hand
 side in the first case, and reusing factorizations and exploiting sparsity in the second.
 
-Integrating many independent trajectories — parameter sweeps, ensemble simulations, Monte Carlo
-over initial conditions — is embarrassingly parallel and vectorizes across trajectories. This
+Integrating many independent trajectories (parameter sweeps, ensemble simulations, Monte Carlo
+over initial conditions) is embarrassingly parallel and vectorizes across trajectories. This
 requires a structure-of-arrays state layout, and it fails if each trajectory takes its own
 adaptive steps; the standard resolution is fixed steps within a vector batch, or grouping
 trajectories with similar step histories.

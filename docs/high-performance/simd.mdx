@@ -58,7 +58,7 @@ $$
 S = \frac{n}{\lceil n/W \rceil} \le W,
 $$
 
-approaching $W$ for $n \gg W$ and degrading sharply for short loops — at $n = 10$ and $W = 8$,
+approaching $W$ for $n \gg W$ and degrading sharply for short loops: at $n = 10$ and $W = 8$,
 two vector iterations do the work of ten scalar ones for a speed-up of 5, and the fixed cost
 of entering and leaving the vector loop may exceed the saving entirely.
 
@@ -71,7 +71,7 @@ $$
 
 operations per cycle, where $\lambda$ is the latency and $\tau$ the reciprocal throughput of
 the arithmetic. For $\lambda = 4$, $\tau = 2$ per cycle, saturation requires $k \ge 8$
-accumulators — a number that is a property of the microarchitecture, not of the algorithm.
+accumulators, a number that is a property of the microarchitecture, not of the algorithm.
 
 A vector reduction also changes the summation order, and hence the value, exactly as discussed
 in [Numerical Analysis](/docs/mathematics/numerical-analysis). The error bound improves from
@@ -152,7 +152,7 @@ struct vector_traits;   // width, load, store, fma, reduce
 Four conditions must hold for a loop to vectorize, and each has a standard remedy.
 
 Unit stride: strided or indexed access compiles to a gather, which is several times slower
-than a contiguous load. The remedy is layout — see
+than a contiguous load. The remedy is layout; see
 [Data Layout](/docs/high-performance/data-layout).
 
 Absence of aliasing: the compiler must know that the output does not overlap the input.
@@ -169,8 +169,7 @@ Marking small mathematical helpers `inline constexpr` and keeping them free of b
 usually sufficient.
 
 Verification is by inspection of the generated assembly or of the compiler's optimisation
-report, never by assumption. The reports named in [Benchmarks](/docs/benchmarks) —
-`-fopt-info-vec-missed` for GCC, `-Rpass-analysis=loop-vectorize` for Clang — state which
+report, never by assumption. The reports named in [Benchmarks](/docs/benchmarks) (`-fopt-info-vec-missed` for GCC, `-Rpass-analysis=loop-vectorize` for Clang) state which
 loops vectorized and why the others did not.
 
 ## Complexity
@@ -206,7 +205,7 @@ so that lanes agree recovers most of the loss.
 Alignment affects loads less than it used to and stores more. Aligning to the register width
 is nearly free at allocation and removes split-line penalties in store-heavy kernels.
 
-Horizontal operations — reductions across lanes, shuffles — are far more expensive than
+Horizontal operations (reductions across lanes, shuffles) are far more expensive than
 vertical ones. A well-structured vector loop keeps values in lanes throughout and reduces once
 at the end.
 
@@ -219,12 +218,12 @@ available everywhere.
 
 The auto-vectorizer is opportunistic and its decisions change between compiler versions. A
 kernel that vectorizes today may not after an upgrade, so vectorization status is checked in
-the build rather than assumed — by an optimisation-report check or by a performance regression
+the build rather than assumed; by an optimisation-report check or by a performance regression
 test.
 
 Reassociation changes results, and a vectorized reduction is a reassociated reduction. Where
-bitwise reproducibility across machines with different vector widths is required — and in
-regulated numerical work it sometimes is — vectorized reductions are excluded, or a fixed
+bitwise reproducibility across machines with different vector widths is required (and in
+regulated numerical work it sometimes is) vectorized reductions are excluded, or a fixed
 reduction tree independent of the hardware width is used.
 
 Scalable vector extensions (SVE, RVV) have no compile-time width, so code written around a

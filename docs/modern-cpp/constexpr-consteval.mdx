@@ -160,7 +160,7 @@ is written with a tolerance.
 quantity, since it converts "the optimiser will fold this" into a guarantee. Its cost is that
 an immediate function cannot be passed as a function pointer, cannot appear in an unevaluated
 runtime context, and cannot be called from a non-`consteval` function outside an immediate
-invocation — a restriction relaxed in C++23 for immediate-escalating functions.
+invocation, a restriction relaxed in C++23 for immediate-escalating functions.
 
 ## Complexity
 
@@ -168,7 +168,7 @@ invocation — a restriction relaxed in C++23 for immediate-escalating functions
   rows={[
     {operation: 'constexpr call, constant-evaluated', time: 'Θ(steps) build', space: 'Θ(live objects) build', note: 'No runtime cost'},
     {operation: 'constexpr call, runtime-evaluated', time: 'As written', space: 'As written', note: 'No penalty for the specifier'},
-    {operation: 'consteval call', time: 'Θ(steps) build', space: '—', note: 'Runtime cost is zero by construction'},
+    {operation: 'consteval call', time: 'Θ(steps) build', space: 'n/a', note: 'Runtime cost is zero by construction'},
     {operation: 'constinit variable', time: 'Θ(1)', space: 'Θ(sizeof) image', note: 'No dynamic initialisation'},
     {operation: 'Non-constinit dynamic global', time: 'Θ(init) at startup', space: 'Θ(sizeof)', note: 'Order across translation units unspecified'},
   ]}
@@ -195,8 +195,8 @@ faster arrangement, and the `constexpr` routine is retained as the checked refer
 
 Allocation during constant evaluation is transient: memory allocated must be deallocated
 before the evaluation completes, so returning a `std::vector` from a `constexpr` function to
-a `constexpr` variable does not work. The two-pass idiom — a `consteval` function computing
-the size, then a `constexpr` function filling a `std::array` of that size — is the standard
+a `constexpr` variable does not work. The two-pass idiom (a `consteval` function computing
+the size, then a `constexpr` function filling a `std::array` of that size) is the standard
 workaround, and it evaluates the computation twice.
 
 Floating-point agreement between contexts is not guaranteed under optimisation options that

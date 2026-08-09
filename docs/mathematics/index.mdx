@@ -2,28 +2,47 @@
 title: Mathematics
 sidebar_label: Overview
 sidebar_position: 0
-description: The structures generic numerical components are written against, stated in the form used later as concept requirements.
+description: "The structures generic numerical components are written against, stated in the form used later as concept requirements."
 ---
 
 # Mathematics
 
-The mathematics in this part is selected by a single criterion: it must be needed to state
-what a component computes, or to bound the error in what it actually computes.
+The mathematics in this part is selected by a single criterion: it must be needed to state what
+a component computes, or to bound the error in what it actually computes.
 
 ## The role of this part
 
+### Structure as the domain of an algorithm
+
 A generic numerical component has a domain, and that domain is almost always an algebraic
-structure. A summation algorithm needs an associative operation with an identity; a
-Gram–Schmidt orthogonalisation needs an inner product space over an ordered field; a
+structure. A summation algorithm needs an associative operation with an identity. A
+Gram–Schmidt orthogonalisation needs an inner product space over an ordered field. A
 conjugate-gradient iteration needs a symmetric positive-definite operator and the field
-arithmetic to form Krylov combinations. These requirements are mathematical statements before
-they are C++ concepts, and stating them first is what keeps the concepts honest.
+arithmetic required to form Krylov combinations. These requirements are mathematical statements
+before they are C++ concepts, and stating them first is what keeps the concepts honest.
+
+The order matters. A concept written by inspecting an implementation records what that
+implementation happened to use. A concept written from the structure records what the
+correctness argument needs, which is usually less, and which is stable under changes to the
+implementation.
+
+### Error as part of the specification
 
 The second role is error. Every computation in floating-point arithmetic solves a nearby
-problem, and the distance between that problem and the intended one is governed by the
-conditioning of the problem and the stability of the algorithm. This is not a caveat attached
-to numerical entries; it is part of their specification, and it is developed in
+problem, and the distance between that problem and the intended one is governed by two separate
+quantities: the conditioning of the problem and the stability of the algorithm. This is not a
+caveat attached to numerical entries. It is part of their specification, and it is developed in
 [Numerical Analysis](/docs/mathematics/numerical-analysis).
+
+A component whose documentation states what it returns but not the accuracy with which it
+returns it has specified nothing that can be tested.
+
+### What is deliberately absent
+
+This part is not a course. Results are stated in the generality in which they are used, proofs
+are given only where the proof is the reason a bound has the shape it has, and topics with no
+computational consequence in this reference are omitted regardless of their mathematical
+interest.
 
 ## Entries
 
@@ -39,26 +58,72 @@ to numerical entries; it is part of their specification, and it is developed in
 
 ## Notation
 
-Notation follows [Conventions](/docs/conventions). In brief: $F$ is a field, $V$ a vector
-space over $F$, $A \in F^{m \times n}$ a matrix, $u$ the unit roundoff, and $\hat{x}$ a
-computed approximation to $x$.
+Notation follows [Conventions](/docs/conventions). The abbreviations used constantly in this
+part are collected here.
 
-## How structure becomes an interface
+| Symbol | Meaning |
+| --- | --- |
+| $F$ | A field, usually $\mathbb{R}$ or $\mathbb{C}$ |
+| $V, W$ | Vector spaces over $F$ |
+| $A \in F^{m \times n}$ | A matrix, with entries $a_{ij}$ |
+| $\mathcal{T}$ | The set of C++ types |
+| $\mathcal{C} \subseteq \mathcal{T}$ | The model class of a concept $C$ |
+| $u$ | The unit roundoff, $2^{-53}$ for binary64 |
+| $\gamma_n$ | $nu/(1 - nu)$, the standard rounding accumulation factor |
+| $\hat{x}$ | A computed approximation to $x$ |
+| $\kappa(f, x)$ | The relative condition number of $f$ at $x$ |
+| $\sigma_i, \lambda_i$ | Singular values and eigenvalues, ordered decreasingly in modulus |
 
-A structure is a carrier set with operations and laws. The translation into C++ is
-mechanical for the carrier and the operations, and impossible for the laws:
+Indices run from $1$ in mathematics and from $0$ in code. The two are never silently mixed
+within an entry.
+
+## From structure to interface
+
+### What transfers
+
+A structure is a carrier set with operations and laws. The translation into C++ is mechanical
+for the carrier and the operations, and impossible for the laws:
 
 $$
 (R, +, \cdot, 0, 1) \quad\longmapsto\quad \texttt{concept Ring} = \text{operations only}.
 $$
 
-The laws — associativity, distributivity, the identities — are recorded as semantic
-requirements and go unchecked. This is not a deficiency to be worked around but a fact to be
-managed, and the discipline for managing it is in
+The laws (associativity, distributivity, the identities) are recorded as semantic requirements
+and go unchecked. This is not a deficiency to be worked around but a fact to be managed, and the
+discipline for managing it is in
 [Semantic Requirements](/docs/formal-cpp/semantic-requirements).
 
-The floating-point case is worth stating at the outset because it recurs in every entry:
-`double` with addition is not a monoid, since addition is not associative. Every algorithm
-whose correctness argument uses associativity — every parallel reduction, every vectorized
-summation — therefore computes something other than the mathematical sum, and the difference
-is bounded rather than absent.
+### The floating-point qualification
+
+The qualification recurs in every entry and is worth stating once at the outset: `double` with
+addition is not a monoid, because addition is not associative. For $a = 1$, $b = 2^{-53}$,
+$c = 2^{-53}$ in binary64,
+
+$$
+\mathrm{fl}(\mathrm{fl}(a + b) + c) = 1, \qquad
+\mathrm{fl}(a + \mathrm{fl}(b + c)) = 1 + 2^{-52},
+$$
+
+so the two parenthesisations differ in the last representable bit. Every algorithm whose
+correctness argument uses associativity (every parallel reduction, every vectorized summation,
+every blocked matrix product) therefore computes something other than the mathematical result,
+and the difference is bounded rather than absent.
+
+The consequence is not that the algebraic reading is useless. It is that each entry carries two
+statements: what holds in the structure, and what holds in the machine approximation to it, with
+the gap quantified.
+
+### The shape of an entry
+
+Each entry in this part develops its subject through the same sequence, and the sequence is what
+connects it to the rest of the reference:
+
+<Chain
+  stages={[
+    {label: 'Structure', detail: 'Carrier, operations, laws, and the standard examples.'},
+    {label: 'Consequences', detail: 'What the laws license algorithmically.'},
+    {label: 'Concept', detail: 'The operations expressed as a C++ constrained interface.'},
+    {label: 'Obligations', detail: 'The laws the compiler cannot check, enumerated.'},
+    {label: 'Cost', detail: 'Operation counts and error bounds for the standard algorithms.'},
+  ]}
+/>

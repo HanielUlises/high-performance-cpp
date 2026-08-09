@@ -33,8 +33,8 @@ substitute, in which case it is removed from consideration, or produces an ill-f
 entity, in which case the program is ill-formed.
 </Definition>
 
-The distinction in the last sentence — between failure during substitution and failure
-after it — is the entire subject of SFINAE, and the reason concepts were introduced.
+The distinction in the last sentence (between failure during substitution and failure
+after it) is the entire subject of SFINAE, and the reason concepts were introduced.
 
 ## Motivation
 
@@ -64,7 +64,7 @@ $$
 
 Only the *immediate context* participates in the first. This is why a trait written in terms
 of a return type is a filter, while the same condition discovered inside a function body is
-a hard error — an asymmetry that generic libraries were built around for two decades and
+a hard error, an asymmetry that generic libraries were built around for two decades and
 that constrained templates now express directly.
 
 Name lookup in templates proceeds in two phases. Non-dependent names are looked up at
@@ -185,7 +185,7 @@ Instantiation cost is a design parameter. Each distinct argument tuple produces 
 entity, and the compiler's memoisation is per translation unit. Two techniques bound the
 cost: erasing the parts of an implementation that do not depend on the parameters into a
 non-template base or free function, and reducing the number of distinct instantiations by
-constraining parameters to a canonical form — taking `std::span<const T>` rather than an
+constraining parameters to a canonical form: taking `std::span<const T>` rather than an
 arbitrary contiguous range, for example, so that all callers collapse to one instantiation.
 
 ## Complexity

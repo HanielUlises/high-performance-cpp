@@ -147,8 +147,8 @@ bool check_linearity(const Operator& A, Generator& gen, std::size_t n,
 ```
 
 Metamorphic testing is the technique that applies when no reference answer exists: it checks
-relations the output must satisfy — linearity, symmetry, scaling behaviour, invariance under
-permutation — rather than the output itself.
+relations the output must satisfy (linearity, symmetry, scaling behaviour, invariance under
+permutation) rather than the output itself.
 
 ## Implementation
 
@@ -164,8 +164,7 @@ asymptotically cheaper than the operation is unconditional, a check of the same 
 debug-only.
 
 Algebraic laws go to property tests over generators that deliberately produce the awkward values
-— zero, one, infinities, NaN, denormals, empty ranges, single-element ranges, and maximal values
-— since these are where laws fail and where naive generators rarely land.
+(zero, one, infinities, NaN, denormals, empty ranges, single-element ranges, and maximal values) since these are where laws fail and where naive generators rarely land.
 
 Numerical claims go to tests against a higher-precision reference where one is available, and to
 backward-error checks where it is not. The backward-error check is universally available: form
@@ -219,7 +218,7 @@ Sanitisers detect undefined behaviour that occurs during execution; behaviour on
 is untouched, and thread sanitisers observe only the interleavings that happened.
 
 Formal verification of C++ at the scale of a numerical library remains impractical. It is
-applied selectively, to small components whose correctness is both critical and subtle —
+applied selectively, to small components whose correctness is both critical and subtle:
 error-free transformations, fixed-point arithmetic, protocol state machines.
 
 Floating-point results depend on the compiler, the flags, the vector width and the number of

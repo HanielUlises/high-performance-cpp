@@ -39,7 +39,7 @@ arithmetic.
 
 The iteration requires, of the operator: an application $x \mapsto Ax$, symmetry, and positive
 definiteness. It requires, of the vector space: addition, scalar multiplication, and an inner
-product. It requires nothing else — in particular, no access to entries of $A$.
+product. It requires nothing else: in particular, no access to entries of $A$.
 
 <Requirement title="Operator obligations">
 S1. $\langle Ax, y\rangle = \langle x, Ay\rangle$ for all $x, y$ (symmetry).
@@ -176,11 +176,11 @@ violation is detected where it manifests, and reported rather than propagated.
 
 <Complexity
   rows={[
-    {operation: 'Per iteration: operator application', time: 'cost(A)', space: '—', note: '2·nnz for sparse; dominates'},
+    {operation: 'Per iteration: operator application', time: 'cost(A)', space: 'n/a', note: '2·nnz for sparse; dominates'},
     {operation: 'Per iteration: two inner products', time: '4n flops', space: 'Θ(1)', note: 'Two synchronisation points in parallel'},
     {operation: 'Per iteration: three axpy updates', time: '6n flops', space: 'Θ(1)', note: 'Bandwidth-bound'},
-    {operation: 'Working set', time: '—', space: '4n doubles', note: 'x, r, p, Ap'},
-    {operation: 'Iterations to relative tolerance ε', time: 'O(√κ log(1/ε))', space: '—', note: 'κ in the 2-norm'},
+    {operation: 'Working set', time: 'n/a', space: '4n doubles', note: 'x, r, p, Ap'},
+    {operation: 'Iterations to relative tolerance ε', time: 'O(√κ log(1/ε))', space: 'n/a', note: 'κ in the 2-norm'},
     {operation: 'Total, 2-D Laplacian, N unknowns', time: 'Θ(N^{3/2})', space: 'Θ(N)', note: 'κ = Θ(N)'},
     {operation: 'Total, same problem, multigrid preconditioner', time: 'Θ(N)', space: 'Θ(N)', note: 'κ = Θ(1)'},
   ]}
@@ -205,7 +205,7 @@ three.
 The two inner products are global reductions, and in a distributed setting each is a
 synchronisation point. Communication-avoiding variants restructure the recurrence so that the two
 reductions are merged into one per iteration, halving the latency cost at the price of a slightly
-less stable recurrence — a trade that pays at high processor counts and not at low ones.
+less stable recurrence, a trade that pays at high processor counts and not at low ones.
 
 Preconditioning is where the algorithmic leverage is. Jacobi preconditioning is one vector
 multiply per iteration and reduces $\kappa$ modestly; incomplete Cholesky costs a triangular

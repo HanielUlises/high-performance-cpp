@@ -26,7 +26,7 @@ conjunction and disjunction of predicates are $\land$ and $\lor$; implication is
 $\Rightarrow$; equivalence is $\iff$.
 
 Norms are $\lVert \cdot \rVert$, subscripted when the choice matters: $\lVert x \rVert_2$,
-$\lVert A \rVert_F$. Machine precision — the unit roundoff — is $u$; for IEEE-754 binary64,
+$\lVert A \rVert_F$. Machine precision (the unit roundoff) is $u$; for IEEE-754 binary64,
 $u = 2^{-53} \approx 1.11 \times 10^{-16}$. A computed quantity is decorated with a hat,
 $\hat{x}$, and $\mathrm{fl}(x)$ denotes the correctly rounded representation of $x$.
 
@@ -45,8 +45,8 @@ The external-memory model is the pair $(M, B)$: a cache of $M$ words, transfers 
 per line. A statement such as $\Theta(n^3 / (B\sqrt{M}))$ is a transfer count, not an
 operation count, and is meaningless without the model being named.
 
-Where an entry gives both, the two are reported separately and their ratio — the arithmetic
-intensity, in operations per byte moved — is given, since it determines which of the two
+Where an entry gives both, the two are reported separately and their ratio (the arithmetic
+intensity, in operations per byte moved) is given, since it determines which of the two
 bounds the computation.
 
 ## Code
@@ -69,8 +69,7 @@ concept Additive = requires(T x, T y) {
 }  // namespace hpc
 ```
 
-Component names occupy `namespace hpc`. Concepts are named for the structure they denote —
-`Ring`, `VectorSpace`, `RandomAccessRange` — and are capitalised. Type parameters are named
+Component names occupy `namespace hpc`. Concepts are named for the structure they denote (`Ring`, `VectorSpace`, `RandomAccessRange`) and are capitalised. Type parameters are named
 for their role, `T` for an arbitrary type, `F` for a field, `A` for a matrix type, and are
 not abbreviated past recognition. Variables carry the names their mathematics gives them.
 
@@ -80,8 +79,8 @@ removed rather than improved.
 ## Semantic requirements
 
 C++ checks the syntactic part of a concept and none of the semantic part. Where an entry
-requires laws — associativity, commutativity, the existence of an identity, a strict weak
-ordering — those laws are stated explicitly as requirements, and their violation is
+requires laws (associativity, commutativity, the existence of an identity, a strict weak
+ordering) those laws are stated explicitly as requirements, and their violation is
 described as undefined behaviour of the component, not of the language.
 
 The notation used throughout is a numbered requirement block: a syntactic part expressible

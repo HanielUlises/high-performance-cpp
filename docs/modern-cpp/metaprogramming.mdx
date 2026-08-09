@@ -35,7 +35,7 @@ implementation from properties of a type, computing the layout of a heterogeneou
 aggregate, unrolling a loop whose trip count is a template parameter, or verifying at
 translation time that a unit-bearing expression is dimensionally consistent.
 
-The historical form of this activity — recursive class templates computing over type lists —
+The historical form of this activity (recursive class templates computing over type lists)
 was expensive to write, expensive to compile, and produced diagnostics proportional to the
 recursion depth. Most of what it was used for has since become expressible more directly:
 predicates by concepts, branching by `if constexpr`, arithmetic by `constexpr` functions

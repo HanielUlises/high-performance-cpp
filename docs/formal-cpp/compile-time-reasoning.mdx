@@ -20,8 +20,8 @@ description: What the translator can be made to establish, the shape of that pro
 <Definition title="The translation-time proof system">
 The propositions a C++ translator can be made to establish are those expressible as a constant
 boolean expression: constraint satisfaction, `static_assert` over `constexpr` evaluation, and
-the well-formedness checks implied by both. The system is *total* — every such proposition is
-decided, subject to implementation limits — and *shallow*: it quantifies over nothing, and its
+the well-formedness checks implied by both. The system is *total* (every such proposition is
+decided, subject to implementation limits) and *shallow*: it quantifies over nothing, and its
 subject matter is the program's syntax and the values it can compute during translation.
 </Definition>
 
@@ -35,7 +35,7 @@ The reason for treating the boundary carefully is that the system's shallowness 
 mistake for weakness. It cannot prove that a function terminates, that an invariant holds for
 all inputs, or that a matrix is positive definite. It can establish that a type has the
 operations an algorithm needs, that a table of constants was computed correctly, that a wrapper
-has no representational overhead, and that a conversion is lossless — and these are the
+has no representational overhead, and that a conversion is lossless, and these are the
 properties that generic numerical code most often gets wrong.
 
 ## Formal formulation
@@ -61,8 +61,8 @@ $$
 $$
 
 because $V_T$ is not enumerable in the language, and it therefore cannot establish any
-proposition about all values of a type. Every value-level obligation — associativity, an
-invariant, a precondition — is outside it.
+proposition about all values of a type. Every value-level obligation (associativity, an
+invariant, a precondition) is outside it.
 
 The boundary can be stated exactly: a proposition is establishable at translation time iff it is
 a property of the program text and of finitely many values computable during translation.
@@ -140,7 +140,7 @@ static_assert(3 * l2_block * l2_block * sizeof(double) <= (1 << 20));
 
 The final assertion states the capacity constraint from
 [Cache Locality](/docs/high-performance/cache-locality) and checks that the derived block size
-respects it — a proof, at translation time, of a property that would otherwise be a comment.
+respects it, a proof, at translation time, of a property that would otherwise be a comment.
 
 ## Implementation
 
@@ -174,7 +174,7 @@ relies on.
     {operation: 'Type trait instantiation', time: 'Θ(1)', space: 'Θ(1) retained', note: 'Memoised'},
     {operation: 'Runtime precondition check', time: 'Cost of the predicate', space: 'Θ(1)', note: 'Debug or contract-enabled builds'},
     {operation: 'Property test, k trials', time: 'Θ(k · cost)', space: 'Θ(1)', note: 'Test build only'},
-    {operation: 'External verification', time: 'Unbounded', space: '—', note: 'Outside the language'},
+    {operation: 'External verification', time: 'Unbounded', space: 'n/a', note: 'Outside the language'},
   ]}
 />
 

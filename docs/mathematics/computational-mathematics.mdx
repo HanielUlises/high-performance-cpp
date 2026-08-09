@@ -2,7 +2,7 @@
 title: Computational Mathematics
 sidebar_label: Computational Mathematics
 sidebar_position: 7
-description: Exact arithmetic, algebraic complexity, structure exploitation, and the trade between symbolic and numerical computation.
+description: "Exact arithmetic, algebraic complexity, structure exploitation, and the trade between symbolic and numerical computation."
 ---
 
 # Computational Mathematics
@@ -17,45 +17,92 @@ description: Exact arithmetic, algebraic complexity, structure exploitation, and
 
 ## Definition
 
-Computational mathematics is the study of algorithms for mathematical objects — polynomials,
-integers, matrices, algebraic structures — with cost measured in operations of the underlying
-algebra rather than in machine cycles.
+Computational mathematics is the study of algorithms for mathematical objects, such as
+polynomials, integers, matrices and algebraic structures, with cost measured in operations of the
+underlying algebra rather than in machine cycles.
+
+### The arithmetic cost model
 
 <Definition title="Arithmetic complexity">
-Fix a ring $R$ and count only ring operations, each at unit cost. The *arithmetic complexity*
-of a computation is the minimum number of such operations over all algorithms computing it.
-Bounds in this model are independent of the representation of elements, and translate to a
-machine cost by multiplying by the cost of an operation in $R$.
+Fix a ring $R$ and count only ring operations, each at unit cost. The *arithmetic complexity* of
+a computation is the minimum number of such operations over all algorithms computing it. Bounds
+in this model are independent of the representation of elements, and translate to a machine cost
+by multiplying by the cost of an operation in $R$.
 </Definition>
+
+The model is useful because it separates two questions that are otherwise entangled: how many
+operations an algorithm performs, and how expensive each operation is. For fixed-precision
+arithmetic the second factor is constant and the model predicts running time directly. For
+multiprecision arithmetic it is not, and a bound in the model must be converted before it means
+anything.
+
+#### The bit cost model
+
+The complementary model counts bit operations, and it is the one that matters when operands grow.
+Multiplying two $n$-bit integers costs $\Theta(n^2)$ bit operations schoolbook, $\Theta(n^{1.585})$
+by Karatsuba, and $O(n \log n)$ by the best known methods. An algorithm with a fixed arithmetic
+complexity can therefore have wildly different bit complexities depending on how its intermediate
+operands grow, which is the subject of coefficient growth below.
+
+### Exactness
+
+<Definition title="Exact computation">
+A computation is *exact* when its result is the mathematically correct value, as opposed to an
+approximation with a bounded error. Exactness requires a representation closed under the
+operations used: $\mathbb{Z}$ with unbounded integers, $\mathbb{Q}$ with normalised pairs,
+$\mathbb{Z}/m\mathbb{Z}$ with machine words, or $F[x]$ with coefficient sequences over an exact
+$F$.
+</Definition>
+
+Exactness is not a stronger form of accuracy; it is a different property with a different cost
+structure. An exact computation has no error bound to state, and its cost grows with the size of
+the values rather than being fixed by the format.
 
 ## Motivation
 
 Two distinct questions are addressed by the same body of theory.
 
-The first is exactness. Some computations must be exact: determining whether a matrix is
-singular, deciding the sign of a geometric predicate, verifying an algebraic identity, or
-computing with polynomials whose coefficients must not drift. Floating-point arithmetic
-answers none of these reliably, and the alternative is arithmetic in $\mathbb{Q}$,
-$\mathbb{Z}$, or $\mathbb{Z}/p\mathbb{Z}$, where the cost model is the one above.
+### When approximation is not acceptable
 
-The second is structure. Fast algorithms — Karatsuba, Strassen, the fast Fourier transform —
-are algebraic identities that reduce the operation count below the obvious bound. Whether
-they are worth using is a question about their constants, their stability, and the size at
-which the asymptotic advantage overcomes them.
+Some computations must be exact. Determining whether a matrix is singular, deciding the sign of a
+geometric predicate, verifying an algebraic identity, and computing with polynomials whose
+coefficients must not drift are all of this kind.
+
+The geometric case is the most instructive. A floating-point orientation test on three nearly
+collinear points can return inconsistent answers for different orderings of the same points, and a
+convex hull algorithm fed inconsistent predicates does not produce a slightly wrong hull: it
+loops, crashes, or produces a self-intersecting object. The remedy is exact predicates with
+floating-point filters, which use the cheap approximate test when its error bound proves the sign
+and fall back to exact arithmetic otherwise.
+
+### When structure beats brute force
+
+Fast algorithms, namely Karatsuba, Strassen and the fast Fourier transform, are algebraic
+identities that reduce the operation count below the obvious bound. Whether they are worth using
+is a question about their constants, their stability, and the size at which the asymptotic
+advantage overcomes them, and the answers are different for each.
 
 ## Formal formulation
 
+### Reductions between problems
+
 The fundamental reductions are between problems, and the reductions are cheap.
 
-Polynomial multiplication of degree $n$ reduces to the discrete Fourier transform of length
-$2n$, since the DFT diagonalises convolution:
+#### Convolution and the Fourier transform
+
+Polynomial multiplication of degree $n$ reduces to the discrete Fourier transform of length $2n$,
+since the transform diagonalises convolution:
 
 $$
 \widehat{(f \cdot g)} = \hat{f} \odot \hat{g}, \qquad
 f \cdot g = \mathrm{DFT}^{-1}\big( \mathrm{DFT}(f) \odot \mathrm{DFT}(g) \big),
 $$
 
-giving $\Theta(n \log n)$ operations against $\Theta(n^2)$ for the direct method.
+giving $\Theta(n \log n)$ operations against $\Theta(n^2)$ for the direct method. The statement is
+an isomorphism of algebras, and it is the reason the same transform serves signal processing,
+integer multiplication and polynomial arithmetic.
+
+#### Karatsuba
 
 Karatsuba's identity splits a product into three half-sized products rather than four:
 
@@ -65,19 +112,27 @@ $$
 
 giving $T(n) = 3T(n/2) + \Theta(n)$ and $T(n) = \Theta(n^{\log_2 3}) = \Theta(n^{1.585})$.
 
-Strassen's identity does the same for $2 \times 2$ block matrix multiplication, using seven
-block products instead of eight:
+Toom-Cook generalises the split to $k$ parts with $2k-1$ products, giving
+$\Theta(n^{\log_k (2k-1)})$, and the sequence of exponents decreases towards one as $k$ grows
+while the constants grow, which is the standard shape of an asymptotic hierarchy with a crossover
+per level.
+
+#### Strassen
+
+Strassen's identity does the same for $2 \times 2$ block matrix multiplication, using seven block
+products instead of eight:
 
 $$
 T(n) = 7T(n/2) + \Theta(n^2) \;\Rightarrow\; T(n) = \Theta(n^{\log_2 7}) = \Theta(n^{2.807}).
 $$
 
-The exponent of matrix multiplication, $\omega = \inf\{c : \text{MM in } O(n^c)\}$, is known
-to satisfy $2 \le \omega < 2.372$, with the upper bounds below Strassen's obtained by methods
-whose constants make them impractical.
+The exponent of matrix multiplication, $\omega = \inf\{c : \text{multiplication in } O(n^c)\}$, is
+known to satisfy $2 \le \omega < 2.372$, with the upper bounds below Strassen's obtained by
+methods whose constants make them impractical. Whether $\omega = 2$ is open.
 
-Modular arithmetic supplies the standard technique for controlling coefficient growth: compute
-modulo several primes and reconstruct by the Chinese remainder theorem.
+### Modular methods
+
+Modular arithmetic supplies the standard technique for controlling coefficient growth.
 
 <Theorem title="Chinese remainder">
 For pairwise coprime $m_1, \dots, m_k$ with $M = \prod m_i$, the map
@@ -89,12 +144,31 @@ is a ring isomorphism. A computation whose result is bounded in absolute value b
 therefore be performed independently modulo each $m_i$ and reconstructed.
 </Theorem>
 
-The practical value is that each modular computation uses machine-word arithmetic and the
-$k$ computations are independent, hence embarrassingly parallel.
+The practical value is threefold: each modular computation uses machine-word arithmetic; the $k$
+computations are independent, hence embarrassingly parallel; and the number of primes needed is
+determined by an a priori bound on the result, such as Hadamard's bound on a determinant.
+
+#### Coefficient growth
+
+The reason modular methods exist is that exact arithmetic over $\mathbb{Q}$ suffers explosive
+intermediate growth. Gaussian elimination over $\mathbb{Q}$ produces entries whose bit lengths
+grow linearly in the elimination step, so the cost is $\Theta(n^5)$ bit operations rather than the
+$\Theta(n^3)$ arithmetic operations the model counts. Two remedies exist: fraction-free
+elimination, which keeps entries integral and bounded by minors (the Bareiss algorithm), and
+modular computation followed by reconstruction.
+
+### Exact predicates and filters
+
+For a predicate that is a polynomial in the inputs, such as the sign of a determinant, the
+standard construction evaluates it in floating point together with a running error bound. If the
+computed value exceeds the bound in magnitude, its sign is certified and the exact path is not
+taken; otherwise the exact computation runs. Since the uncertain case is rare on generic input,
+the amortised cost is close to that of the floating-point evaluation while the guarantee is that
+of the exact one.
 
 ## C++ representation
 
-Exact rational arithmetic with a normalising invariant:
+### Exact rationals
 
 ```cpp
 #include <cstdint>
@@ -104,6 +178,8 @@ Exact rational arithmetic with a normalising invariant:
 namespace hpc {
 
 // Invariant: denominator > 0 and gcd(|numerator|, denominator) == 1.
+// The invariant is established in the constructor and preserved by every
+// operation, so equality is representation equality.
 class rational {
 public:
     constexpr rational(std::int64_t p = 0, std::int64_t q = 1) : num_{p}, den_{q} {
@@ -134,19 +210,26 @@ private:
 }  // namespace hpc
 ```
 
-The type satisfies `Field` from [Algebra](/docs/mathematics/algebra) on the subset of values
-where no intermediate overflows, and the qualification is the entire practical difficulty:
-exact rational arithmetic on unbounded integers is a field, and on `int64_t` it is a partial
-one.
+The type satisfies `Field` from [Algebra](/docs/mathematics/algebra) on the subset of values where
+no intermediate overflows, and the qualification is the entire practical difficulty: exact
+rational arithmetic over unbounded integers is a field, and over `int64_t` it is a partial one
+whose domain of validity depends on the computation rather than on the type.
 
-Modular arithmetic with the modulus as a template parameter, so that the reduction is a
-constant:
+Normalising in the constructor is a deliberate cost. It makes every operation more expensive by a
+gcd and makes equality a bit comparison; the alternative, normalising lazily, makes equality
+expensive and permits unbounded growth in the interim. For a type whose values are compared often,
+the eager choice is right.
+
+### Modular arithmetic with a compile-time modulus
 
 ```cpp
 #include <cstdint>
 
 namespace hpc {
 
+// With P a template parameter, the compiler replaces the division by a
+// multiply-shift sequence (Barrett or Montgomery reduction), roughly an order
+// of magnitude faster than a hardware divide.
 template <std::uint64_t P>
 class modular {
 public:
@@ -170,15 +253,7 @@ private:
 }  // namespace hpc
 ```
 
-With `P` a template parameter the compiler replaces the division by a multiply-shift sequence
-(Barrett or Montgomery reduction), which is roughly an order of magnitude faster than a
-hardware divide.
-
-## Implementation
-
-The recurring implementation decision is the cutoff between a fast algorithm and the direct
-one. Karatsuba's recursion has a larger constant than schoolbook multiplication, so the
-crossover is empirical:
+### Cutoffs as named, measured constants
 
 ```cpp
 #include <cstddef>
@@ -187,80 +262,154 @@ crossover is empirical:
 
 namespace hpc {
 
-// Cutoff determined by measurement on the target, not by the asymptotics.
+// Cutoffs determined by measurement on the target, not by the asymptotics.
+// The values are recorded with the measurement that produced them.
 inline constexpr std::size_t karatsuba_cutoff = 32;
+inline constexpr std::size_t fft_cutoff = 1024;
 
+// Dispatches: schoolbook below the first cutoff, Karatsuba between the two,
+// FFT-based convolution above the second.
 std::vector<double> multiply_polynomials(std::span<const double> a,
                                          std::span<const double> b);
-// Dispatches: schoolbook below the cutoff, Karatsuba above it, FFT-based
-// convolution above a second, much larger cutoff.
 
 }  // namespace hpc
 ```
 
-Cutoffs are stated as named constants with the measurement that produced them recorded in
-[Benchmarks](/docs/benchmarks), never as bare literals in a recursion.
+Cutoffs are stated as named constants with the measurement recorded in
+[Benchmarks](/docs/benchmarks), never as bare literals inside a recursion. A literal in a
+recursion is a measurement that has lost its provenance.
+
+## Implementation
+
+### Choosing a representation
+
+The representation is chosen from the operations required, in the same way a storage format is
+chosen from the access pattern in
+[Sparse Computation](/docs/scientific-computing/sparse-computation):
+
+| Requirement | Representation |
+| --- | --- |
+| Exact integer arithmetic, moderate size | Fixed-width with overflow checking |
+| Exact integer arithmetic, unbounded | Multiprecision limbs |
+| Exact field arithmetic, bounded result | $\mathbb{Z}/p\mathbb{Z}$ with machine words |
+| Exact rational arithmetic | Normalised pairs, or delayed to a single final division |
+| Certified sign only | Floating-point filter with exact fallback |
+| Polynomial arithmetic | Dense coefficient array, or sparse term list when few terms |
+
+### Filters in practice
+
+```cpp
+#include <cmath>
+
+namespace hpc {
+
+// Sign of the 2x2 determinant, with a static error bound. Returns the sign
+// when it is certified and calls the exact path otherwise. On generic input
+// the exact path is taken rarely, so the amortised cost is that of the
+// floating-point evaluation.
+inline int orientation(double ax, double ay, double bx, double by,
+                       double cx, double cy)
+{
+    const double detleft  = (ax - cx) * (by - cy);
+    const double detright = (ay - cy) * (bx - cx);
+    const double det = detleft - detright;
+
+    const double sum = std::abs(detleft) + std::abs(detright);
+    constexpr double relative_bound = 3.0 * 1.1102230246251565e-16;  // 3u
+    if (std::abs(det) > relative_bound * sum) {
+        return det > 0.0 ? 1 : -1;
+    }
+    return exact_orientation(ax, ay, bx, by, cx, cy);
+}
+
+}  // namespace hpc
+```
+
+The bound is derived from the standard model of
+[Numerical Analysis](/docs/mathematics/numerical-analysis), and deriving it correctly is the
+whole content of the technique: a bound that is too small returns wrong signs, and one that is too
+large makes the exact path common and the filter pointless.
 
 ## Complexity
 
 <Complexity
   rows={[
     {operation: 'Schoolbook polynomial multiplication', time: 'Θ(n²)', space: 'Θ(n)', note: 'Best below the cutoff'},
-    {operation: 'Karatsuba', time: 'Θ(n^{1.585})', space: 'Θ(n log n)', note: 'Crossover typically n ≈ 32–64'},
-    {operation: 'FFT-based convolution', time: 'Θ(n log n)', space: 'Θ(n)', note: 'Crossover n ≈ 10³; rounding error O(u log n)'},
+    {operation: 'Karatsuba', time: 'Θ(n^{1.585})', space: 'Θ(n log n)', note: 'Crossover typically n = 32 to 64'},
+    {operation: 'Toom-3', time: 'Θ(n^{1.465})', space: 'Θ(n)', note: 'Crossover above Karatsuba'},
+    {operation: 'FFT-based convolution', time: 'Θ(n log n)', space: 'Θ(n)', note: 'Crossover about n = 10³; error O(u log n)'},
     {operation: 'Schoolbook matrix multiplication', time: '2n³ flops', space: 'Θ(1)', note: 'Reaches near-peak throughput when blocked'},
-    {operation: 'Strassen', time: 'Θ(n^{2.807})', space: 'Θ(n²) extra', note: 'Crossover n ≈ 500–2000; weaker stability'},
-    {operation: 'Modular determinant, k primes', time: 'Θ(k n³) word ops', space: 'Θ(n²)', note: 'Independent, parallel; exact'},
-    {operation: 'Rational arithmetic, growing operands', time: 'Θ(n²) bit ops per op', space: 'Growing', note: 'Coefficient explosion'},
+    {operation: 'Strassen', time: 'Θ(n^{2.807})', space: 'Θ(n²) extra', note: 'Crossover n = 500 to 2000; weaker stability'},
+    {operation: 'Modular determinant, k primes', time: 'Θ(k n³) word ops', space: 'Θ(n²)', note: 'Independent and parallel; exact'},
+    {operation: 'Rational Gaussian elimination', time: 'Θ(n⁵) bit ops', space: 'Growing', note: 'Coefficient explosion'},
+    {operation: 'Fraction-free (Bareiss) elimination', time: 'Θ(n³) ops on bounded entries', space: 'Θ(n²)', note: 'Entries are minors'},
+    {operation: 'Filtered predicate, generic input', time: 'Θ(1) floating point', space: 'Θ(1)', note: 'Exact path taken rarely'},
+    {operation: 'Filtered predicate, degenerate input', time: 'Exact path cost', space: 'Θ(1)', note: 'Adversarial input defeats the filter'},
   ]}
 />
 
 ## Performance considerations
 
-Asymptotically fast algorithms lose to direct ones at small sizes and the crossover is a
-property of the machine. Strassen's advantage at $n = 4096$ is real — roughly 20 percent
-against a tuned `GEMM` — and it requires $\Theta(n^2)$ temporary storage and gives up the
-elementwise backward stability of the direct method, replacing it with a norm-wise bound.
-Whether the trade is acceptable depends on the application; in this reference it is not taken
-without stating the change.
+### Asymptotically fast is not fast
 
-Exact arithmetic's dominant cost is operand growth. Gaussian elimination over $\mathbb{Q}$
-produces entries whose bit lengths grow linearly in the elimination step, so the cost is
-$\Theta(n^5)$ bit operations rather than $\Theta(n^3)$ arithmetic ones. Fraction-free
-elimination (Bareiss) and modular methods both address this, the latter by keeping every
-intermediate in a machine word.
+Asymptotically fast algorithms lose to direct ones at small sizes, and the crossover is a property
+of the machine. Strassen's advantage at $n = 4096$ is real, roughly 20 percent against a tuned
+matrix multiplication, and it requires $\Theta(n^2)$ temporary storage and gives up the
+elementwise backward stability of the direct method, replacing it with a norm-wise bound. Whether
+the trade is acceptable depends on the application; in this reference it is not taken without
+stating the change.
+
+### Operand growth, not operation count, dominates exact arithmetic
+
+The dominant cost of exact arithmetic is operand growth. This is why the arithmetic model
+mispredicts so badly here: an algorithm performing $\Theta(n^3)$ ring operations on operands whose
+size grows linearly performs $\Theta(n^5)$ bit operations. Modular methods and fraction-free
+elimination both address the growth, the former by keeping every intermediate in a machine word.
+
+### Compile-time moduli
 
 Modular computations with a compile-time modulus are the case where the language contributes
-directly: templating on the modulus converts a division per operation into a multiply and
-shift, and the resulting kernels vectorize.
+directly: templating on the modulus converts a division per operation into a multiply and a shift,
+and the resulting kernels vectorise. The technique is an instance of the general principle in
+[Type-Level Programming](/docs/formal-cpp/type-level-programming), and here the payoff is a factor
+of ten on the inner loop.
 
-Memory traffic behaves differently from the numerical case. Exact algorithms with growing
-operands are allocation-bound rather than bandwidth-bound, and the effective optimisation is
-arena allocation with reuse rather than layout.
+### Allocation, not bandwidth
+
+Memory behaviour differs from the numerical case. Exact algorithms with growing operands are
+allocation-bound rather than bandwidth-bound, and the effective optimisation is arena allocation
+with reuse rather than layout or blocking. Profiling such code by cache miss rate is looking at
+the wrong counter.
 
 ## Limitations
 
 Exact arithmetic is unavailable for transcendental quantities: $\pi$, $e^x$ and the values of
-special functions have no exact representation, and computations involving them are
-approximations regardless of how the algebra is carried out. Interval arithmetic is the
-rigorous alternative and costs a factor of two to four with intervals that widen with the
-computation length.
+special functions have no exact finite representation, and computations involving them are
+approximations regardless of how the surrounding algebra is carried out. Interval arithmetic is
+the rigorous alternative and costs a factor of two to four, with intervals that widen with the
+length of the computation.
 
 Fast algorithms are numerically weaker. FFT-based convolution has error $O(u \log n)$ against
-$O(un)$ for the direct method in the worst case but loses the componentwise bound; Strassen
-is norm-wise stable but not componentwise stable, so small entries of the product may be
-computed with no correct digits.
+$O(un)$ for the direct method in the worst case but loses the componentwise bound. Strassen is
+norm-wise stable but not componentwise stable, so small entries of a product may be computed with
+no correct digits.
 
-Arithmetic complexity ignores the cost of an operation, which for multiprecision operands
-grows with operand size. Bounds in the model are correct and must be converted before they
-predict running time.
+Arithmetic complexity ignores the cost of an operation, which for multiprecision operands grows
+with operand size. Bounds in the model are correct and must be converted before they predict
+running time.
+
+Filtered predicates are defeated by adversarial or highly degenerate input, where the exact path
+is taken every time and the amortised argument fails. Applications that must bound worst-case
+latency cannot rely on the filter.
 
 ## Related entries
 
 [Algebra](/docs/mathematics/algebra) for the structures;
-[Numerical Analysis](/docs/mathematics/numerical-analysis) for the stability of the fast
-methods; [Computational Complexity](/docs/high-performance/computational-complexity) for the
-machine-level cost models.
+[Numerical Analysis](/docs/mathematics/numerical-analysis) for the stability of the fast methods
+and for the filter bounds;
+[Computational Complexity](/docs/high-performance/computational-complexity) for the machine-level
+cost models; [Type-Level Programming](/docs/formal-cpp/type-level-programming) for compile-time
+parameters such as the modulus.
 
 ## References
 
@@ -268,7 +417,9 @@ machine-level cost models.
   Press, 2013.
 - D. Knuth, *The Art of Computer Programming*, vol. 2, 3rd ed., Addison-Wesley, 1997.
 - V. Strassen, *Gaussian Elimination is not Optimal*, Numerische Mathematik 13, 1969.
-- J. Alman and V. Vassilevska Williams, *A Refined Laser Method and Faster Matrix
-  Multiplication*, SODA 2021.
-- N. J. Higham, *Exploiting Fast Matrix Multiplication Within the Level 3 BLAS*, ACM TOMS
-  16(4), 1990.
+- J. Alman and V. Vassilevska Williams, *A Refined Laser Method and Faster Matrix Multiplication*,
+  SODA 2021.
+- N. J. Higham, *Exploiting Fast Matrix Multiplication Within the Level 3 BLAS*, ACM TOMS 16(4),
+  1990.
+- J. Shewchuk, *Adaptive Precision Floating-Point Arithmetic and Fast Robust Geometric
+  Predicates*, Discrete and Computational Geometry 18, 1997.

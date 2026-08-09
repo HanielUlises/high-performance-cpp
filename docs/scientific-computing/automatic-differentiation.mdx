@@ -189,7 +189,7 @@ private:
 
 Forward mode is implemented as a type and requires nothing else; it is the correct choice for
 $n$ small, for Jacobian–vector products, and for code that must remain allocation-free. Vector
-forward mode — carrying $k$ derivatives per value — amortises the function evaluation over $k$
+forward mode (carrying $k$ derivatives per value) amortises the function evaluation over $k$
 directions and vectorizes naturally.
 
 Reverse mode requires storage proportional to the number of operations executed, which for a
@@ -204,8 +204,8 @@ exponent, and branches that make the function non-differentiable at the branch p
 applied here is that a non-differentiable point is reported rather than assigned an arbitrary
 subgradient.
 
-Where a routine has a known analytic derivative — a linear solve, an eigenvalue, an iterative
-fixed point — differentiating through the implementation is wasteful and often unstable. The
+Where a routine has a known analytic derivative (a linear solve, an eigenvalue, an iterative
+fixed point) differentiating through the implementation is wasteful and often unstable. The
 correct treatment is a custom rule: for $x = A^{-1}b$, the adjoint is obtained from a solve
 with $A^{\mathsf{T}}$, at the cost of one additional solve rather than of differentiating the
 factorization.
@@ -238,8 +238,7 @@ tape; checkpointing is not an optimisation but a requirement at that scale.
 
 Operator-overloading implementations obstruct vectorization of the original kernel, since the
 arithmetic becomes calls on a class type. Where the kernel is performance-critical and its
-derivative is needed, a hand-written adjoint of the kernel — verified against the automatic one
-— is typically several times faster.
+derivative is needed, a hand-written adjoint of the kernel (verified against the automatic one) is typically several times faster.
 
 The correctness check is cheap and should always be present: comparing an automatic derivative
 against a finite-difference approximation in a random direction detects most implementation
@@ -252,7 +251,7 @@ than removes the growth.
 
 Control flow is differentiated along the path taken. A function with a data-dependent branch is
 differentiated as though the branch condition were constant, which is correct almost everywhere
-and wrong exactly at the branch point — a set of measure zero that optimisation algorithms
+and wrong exactly at the branch point, a set of measure zero that optimisation algorithms
 nevertheless visit.
 
 Iterative solvers differentiated through their iterations produce derivatives of the

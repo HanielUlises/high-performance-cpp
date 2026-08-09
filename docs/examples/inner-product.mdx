@@ -46,7 +46,7 @@ an additive identity, and associativity of addition to license any parenthesisat
 and positive definiteness are properties of the result, not requirements on the computation.
 
 The admissible domain is therefore any pair of equal-length sequences over a field, and the
-requirement that is *not* satisfiable by floating-point types — associativity — is what the
+requirement that is *not* satisfiable by floating-point types (associativity) is what the
 error analysis will have to account for.
 
 ## Type and concept
@@ -224,8 +224,8 @@ independent accumulators, multiplied across $W$ lanes.
 
 For $n$ large enough that the vectors come from memory, the kernel is bandwidth-bound and no
 accumulator arrangement matters. The achievable rate is $B/8$ operations per second for
-bandwidth $B$ bytes per second, and the only remaining levers are reducing the traffic — single
-precision halves it — and using enough cores to saturate the memory system, which one core
+bandwidth $B$ bytes per second, and the only remaining levers are reducing the traffic (single
+precision halves it) and using enough cores to saturate the memory system, which one core
 cannot.
 
 Two consequences follow that are easy to get wrong. Parallelising a large inner product across

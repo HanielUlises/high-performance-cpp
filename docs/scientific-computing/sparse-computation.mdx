@@ -31,8 +31,8 @@ Storage formats differ in what they make cheap:
 | COO | $3\,\mathrm{nnz}$ | $O(\mathrm{nnz})$ | $O(\mathrm{nnz})$ | $O(1)$ append |
 | CSR | $2\,\mathrm{nnz} + n$ | $O(\mathrm{nnz}_i)$ | $O(\mathrm{nnz})$ | $O(\mathrm{nnz})$ |
 | CSC | $2\,\mathrm{nnz} + n$ | $O(\mathrm{nnz})$ | $O(\mathrm{nnz}_j)$ | $O(\mathrm{nnz})$ |
-| BCSR, block $b$ | $\approx \mathrm{nnz}/b + n/b$ | $O(\mathrm{nnz}_i/b)$ | — | — |
-| ELL | $n \cdot \max_i \mathrm{nnz}_i$ | $O(1)$ strided | — | — |
+| BCSR, block $b$ | $\approx \mathrm{nnz}/b + n/b$ | $O(\mathrm{nnz}_i/b)$ | n/a | n/a |
+| ELL | $n \cdot \max_i \mathrm{nnz}_i$ | $O(1)$ strided | n/a | n/a |
 
 ## Motivation
 
@@ -209,7 +209,7 @@ Parallel SpMV by rows is straightforward and load-imbalanced when row lengths va
 by non-zero count rather than by row count fixes this, at the cost of rows split across
 workers and a small combining step.
 
-Preconditioners with sequential structure — incomplete factorizations, Gauss–Seidel — perform
+Preconditioners with sequential structure (incomplete factorizations, Gauss–Seidel) perform
 well per iteration and parallelise poorly; polynomial and Jacobi preconditioners parallelise
 perfectly and converge more slowly. The choice is made on total time, and it changes with core
 count.

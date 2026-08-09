@@ -132,7 +132,7 @@ const config: Config = {
     docs: {
       sidebar: {hideable: true, autoCollapseCategories: false},
     },
-    tableOfContents: {minHeadingLevel: 2, maxHeadingLevel: 3},
+    tableOfContents: {minHeadingLevel: 2, maxHeadingLevel: 4},
     navbar: {
       title: 'High Performance C++',
       hideOnScroll: false,

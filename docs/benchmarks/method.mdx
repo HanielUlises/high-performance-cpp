@@ -28,7 +28,7 @@ missing any component is not a measurement.
 The timing loop is:
 
 1. Allocate and first-touch all data with the same decomposition the kernel will use.
-2. Run the kernel enough times to fill caches to their steady state — warm-up, discarded.
+2. Run the kernel enough times to fill caches to their steady state: warm-up, discarded.
 3. Time $R$ repetitions individually, not in aggregate, so dispersion is available.
 4. Report the statistic appropriate to the kernel's regime, with the dispersion.
 5. Re-run the whole procedure in a second process, and reject the result if the two disagree by

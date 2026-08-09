@@ -20,7 +20,7 @@ description: Computation in the type language, its expressive power, and the pro
 <Definition title="The type language">
 The template system constitutes a language whose values are types and structural constants,
 whose functions are class templates and alias templates, and whose evaluation is instantiation.
-It is functional, pure, and — through recursive instantiation and partial specialisation —
+It is functional, pure, and (through recursive instantiation and partial specialisation)
 Turing-complete, though bounded in practice by implementation limits on instantiation depth.
 </Definition>
 
@@ -37,8 +37,8 @@ identical to the unchecked version.
 Shape checking: matrix conformability expressed through extents in the type, so that a
 non-conforming product is a deduction failure rather than a precondition violation.
 
-Layout and dispatch: selecting an implementation from structural properties of a type — its
-storage order, whether its scalar is complex, whether its extents are static — with no runtime
+Layout and dispatch: selecting an implementation from structural properties of a type (its
+storage order, whether its scalar is complex, whether its extents are static) with no runtime
 branch.
 
 Where the property need not be established before execution, value-level `constexpr`
@@ -212,7 +212,7 @@ checkable rather than aspirational.
 
 Static extents additionally improve the generated code: loop bounds become constants, small
 loops unroll fully, and the vectorizer knows the trip count and can omit the scalar remainder.
-For small fixed-size arithmetic — $3 \times 3$ rotations, $4 \times 4$ transforms — this is
+For small fixed-size arithmetic ($3 \times 3$ rotations, $4 \times 4$ transforms) this is
 worth a large factor and is the reason such types are written this way.
 
 The counterweight is instantiation count. A kernel templated on extents instantiates once per

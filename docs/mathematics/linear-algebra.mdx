@@ -2,7 +2,7 @@
 title: Linear Algebra
 sidebar_label: Linear Algebra
 sidebar_position: 2
-description: Vector spaces, linear maps, inner products, norms and spectra, and their encoding as constrained C++ interfaces.
+description: "Vector spaces, linear maps, inner products, norms and spectra, and their encoding as constrained C++ interfaces."
 ---
 
 # Linear Algebra
@@ -11,11 +11,13 @@ description: Vector spaces, linear maps, inner products, norms and spectra, and 
   entries={[
     {std: 'C++20', note: 'Concepts permit the vector-space axioms to be stated as an interface; ranges supply the traversal vocabulary.'},
     {std: 'C++23', note: 'std::mdspan gives a standard non-owning matrix reference with a layout policy.', paper: 'P0009R18'},
-    {std: 'C++26', note: 'std::linalg supplies BLAS operations over mdspan, so that generic code can dispatch to vendor kernels.', paper: 'P1673R13'},
+    {std: 'C++26', note: 'std::linalg supplies BLAS operations over mdspan, so generic code can dispatch to vendor kernels.', paper: 'P1673R13'},
   ]}
 />
 
 ## Definition
+
+### Vector spaces
 
 <Definition title="Vector space">
 A vector space over a field $F$ is an abelian group $(V, +, 0)$ together with a scalar
@@ -27,65 +29,181 @@ $$
 A map $T : V \to W$ is *linear* when $T(\alpha x + y) = \alpha T(x) + T(y)$.
 </Definition>
 
-Finite-dimensional linear maps are represented by matrices once bases are fixed: for
-$T : F^n \to F^m$ there is a unique $A \in F^{m \times n}$ with $T(x) = Ax$, and composition
-of maps corresponds to matrix multiplication.
+Two derived notions are used constantly. A *basis* is a linearly independent spanning set; every
+finite-dimensional space has one, and all bases have the same cardinality, the *dimension*. A
+*subspace* is a subset closed under the operations, and the two subspaces attached to a linear map
+are its *range* $\operatorname{ran}(T) = \{Tx : x \in V\}$ and its *kernel*
+$\ker(T) = \{x : Tx = 0\}$, related by the rank-nullity theorem
 
-An *inner product* on a vector space over $\mathbb{R}$ or $\mathbb{C}$ is a map
+$$
+\dim \operatorname{ran}(T) + \dim \ker(T) = \dim V .
+$$
+
+#### Matrices as representations of maps
+
+Once bases are fixed, a linear map $T : F^n \to F^m$ is represented by a unique matrix
+$A \in F^{m \times n}$ with $T(x) = Ax$, and composition of maps corresponds to matrix
+multiplication. The distinction between the map and the matrix is not pedantic in computation: an
+operator may be applicable without any matrix existing in memory, and most large-scale solvers in
+[Scientific Computing](/docs/scientific-computing) exploit exactly that. The entry
+[Conjugate Gradient](/docs/examples/conjugate-gradient) is built on the distinction.
+
+#### Change of basis and similarity
+
+A change of basis by an invertible $P$ transforms $A$ into $P^{-1}AP$. Quantities invariant under
+this transformation, namely the eigenvalues, the trace, the determinant and the characteristic
+polynomial, are properties of the map. Quantities that are not invariant, notably the entries and
+the condition number in a fixed norm, are properties of the representation. Numerical methods
+that improve accuracy by rescaling are exploiting precisely this difference.
+
+### Inner products and norms
+
+<Definition title="Inner product space">
+An inner product on a vector space over $\mathbb{R}$ or $\mathbb{C}$ is a map
 $\langle \cdot, \cdot \rangle : V \times V \to F$ that is linear in its second argument,
 conjugate-symmetric, and positive definite. It induces the norm
 $\lVert x \rVert = \sqrt{\langle x, x \rangle}$.
+</Definition>
 
-## Motivation
+The Cauchy-Schwarz inequality, $|\langle x, y\rangle| \le \lVert x\rVert \lVert y\rVert$, is what
+makes angles definable, and it is the source of most estimates in Krylov theory.
 
-Linear algebra is the computational core of scientific computing, and the reason is that most
-problems are either linear or are solved by a sequence of linear problems: Newton's method
-solves $J\delta = -r$ at each step, an implicit time integrator solves a linear system per
-step, and a discretised elliptic PDE is a single large sparse system.
+#### Vector and matrix norms
 
-The second reason is structural. Matrix multiplication has arithmetic intensity growing with
-the blocking factor, which makes it the one dense kernel able to reach a large fraction of
-peak floating-point throughput. Algorithms are therefore reformulated to spend their time in
-matrix–matrix products — blocked factorizations rather than unblocked ones — and the
-reformulation is a linear-algebraic exercise before it is a performance one.
-
-## Formal formulation
-
-Four quantities govern the numerical behaviour of a linear problem.
-
-The *spectrum* $\sigma(A) = \{\lambda : \det(A - \lambda I) = 0\}$, with the spectral radius
-$\rho(A) = \max_{\lambda \in \sigma(A)} |\lambda|$, determines the convergence of stationary
-iterations: $x_{k+1} = Mx_k + c$ converges for every starting point iff $\rho(M) < 1$.
-
-The *singular values* $\sigma_1 \ge \cdots \ge \sigma_n \ge 0$ of $A$, the square roots of the
-eigenvalues of $A^*A$, give the optimal low-rank approximations by the Eckart–Young theorem:
+The norms used in this reference:
 
 $$
-\min_{\operatorname{rank}(B) \le k} \lVert A - B \rVert_2 = \sigma_{k+1}.
+\lVert x \rVert_1 = \sum_i |x_i|, \qquad
+\lVert x \rVert_2 = \Big(\sum_i |x_i|^2\Big)^{1/2}, \qquad
+\lVert x \rVert_\infty = \max_i |x_i|,
 $$
 
-The *condition number* in the 2-norm is $\kappa_2(A) = \sigma_1 / \sigma_n$, and it bounds
-the sensitivity of the solution of $Ax = b$:
-
-$$
-\frac{\lVert \delta x \rVert}{\lVert x \rVert} \le \kappa_2(A)
-\left( \frac{\lVert \delta A \rVert}{\lVert A \rVert} + \frac{\lVert \delta b \rVert}{\lVert b \rVert} \right) + O(\delta^2).
-$$
-
-The *norms* used are the induced $p$-norms and the Frobenius norm,
+and the induced matrix norms, together with the Frobenius norm:
 
 $$
 \lVert A \rVert_1 = \max_j \sum_i |a_{ij}|, \quad
 \lVert A \rVert_\infty = \max_i \sum_j |a_{ij}|, \quad
-\lVert A \rVert_F = \Big( \sum_{i,j} |a_{ij}|^2 \Big)^{1/2},
+\lVert A \rVert_2 = \sigma_1, \quad
+\lVert A \rVert_F = \Big( \sum_{i,j} |a_{ij}|^2 \Big)^{1/2}.
 $$
 
-with $\lVert A \rVert_2 = \sigma_1$ and the submultiplicativity $\lVert AB \rVert \le \lVert A
-\rVert \lVert B \rVert$ that every error analysis in this reference relies on.
+Induced norms are submultiplicative, $\lVert AB \rVert \le \lVert A \rVert \lVert B \rVert$, and
+every error analysis in this reference relies on that inequality. The $1$- and $\infty$-norms are
+computable in $\Theta(mn)$ time; the $2$-norm requires the largest singular value and is therefore
+estimated rather than computed in practice.
+
+### Orthogonality
+
+A set is orthonormal when $\langle q_i, q_j \rangle = \delta_{ij}$. Orthonormal bases are the
+numerically preferred representation of a subspace because the associated matrix $Q$ satisfies
+$\lVert Qx \rVert_2 = \lVert x \rVert_2$, so applying $Q$ neither amplifies nor damps error. This
+single property is why orthogonal transformations dominate stable numerical linear algebra:
+Householder reflections and Givens rotations are used in place of the algebraically simpler
+elimination steps precisely because they preserve the $2$-norm.
+
+## Motivation
+
+### Why linear algebra is the computational core
+
+Most large computations are either linear or are solved by a sequence of linear problems.
+Newton's method solves $J\delta = -r$ at each step. An implicit time integrator solves a linear
+system per step. A discretised elliptic partial differential equation is a single large sparse
+system. Least squares, eigenvalue problems and low-rank approximation are the standard tools of
+data analysis.
+
+### Why it is the performance core
+
+Matrix multiplication has arithmetic intensity growing with the blocking factor, which makes it
+the one dense kernel able to reach a large fraction of peak floating-point throughput. Algorithms
+are therefore reformulated to spend their time in matrix-matrix products, that is, in blocked
+factorizations rather than unblocked ones, and the reformulation is a linear-algebraic exercise
+before it is a performance one. The quantitative version of the argument is in
+[Matrix Multiplication](/docs/examples/matrix-multiplication).
+
+### The three levels
+
+The BLAS classification is a statement about arithmetic intensity, not about interfaces:
+
+| Level | Operation | Data | Flops | Intensity |
+| --- | --- | --- | --- | --- |
+| 1 | $y \leftarrow \alpha x + y$ | $\Theta(n)$ | $\Theta(n)$ | $\Theta(1)$ |
+| 2 | $y \leftarrow \alpha Ax + \beta y$ | $\Theta(n^2)$ | $\Theta(n^2)$ | $\Theta(1)$ |
+| 3 | $C \leftarrow \alpha AB + \beta C$ | $\Theta(n^2)$ | $\Theta(n^3)$ | $\Theta(n)$ |
+
+Only level 3 has intensity growing with the problem size, and only level 3 can be compute-bound.
+Every performance decision in dense linear algebra follows from this table.
+
+## Formal formulation
+
+### Spectra
+
+The *spectrum* is $\sigma(A) = \{\lambda : \det(A - \lambda I) = 0\}$, with spectral radius
+$\rho(A) = \max_{\lambda \in \sigma(A)} |\lambda|$. It determines the convergence of stationary
+iterations.
+
+<Proposition title="Convergence of stationary iterations">
+The iteration $x_{k+1} = Mx_k + c$ converges to the unique fixed point for every starting vector
+if and only if $\rho(M) < 1$, and the asymptotic rate is $\rho(M)$ per step.
+</Proposition>
+
+For a symmetric matrix the spectral theorem gives $A = Q\Lambda Q^{\mathsf{T}}$ with $Q$
+orthogonal and $\Lambda$ real diagonal, which is why symmetric problems admit stronger algorithms
+and sharper bounds than general ones.
+
+### Singular values
+
+The singular values $\sigma_1 \ge \cdots \ge \sigma_n \ge 0$ of $A$ are the square roots of the
+eigenvalues of $A^{*}A$, and $A = U\Sigma V^{*}$ is the singular value decomposition.
+
+<Theorem title="Eckart and Young">
+For any $k$, the best rank-$k$ approximation to $A$ in the $2$-norm and in the Frobenius norm is
+obtained by truncating the singular value decomposition, and
+$$
+\min_{\operatorname{rank}(B) \le k} \lVert A - B \rVert_2 = \sigma_{k+1}, \qquad
+\min_{\operatorname{rank}(B) \le k} \lVert A - B \rVert_F = \Big(\sum_{j>k}\sigma_j^2\Big)^{1/2}.
+$$
+</Theorem>
+
+This theorem justifies every low-rank method: it says that the singular value spectrum, not the
+sparsity pattern or the size, determines how far a matrix can be compressed.
+
+### Conditioning
+
+<Definition title="Condition number">
+For invertible $A$, $\kappa_p(A) = \lVert A \rVert_p \lVert A^{-1} \rVert_p$, with
+$\kappa_2(A) = \sigma_1/\sigma_n$.
+</Definition>
+
+<Proposition title="Sensitivity of a linear system">
+If $(A + \delta A)(x + \delta x) = b + \delta b$ and
+$\lVert \delta A\rVert \lVert A^{-1}\rVert < 1$, then
+$$
+\frac{\lVert \delta x \rVert}{\lVert x \rVert} \le
+\frac{\kappa(A)}{1 - \kappa(A)\lVert \delta A\rVert/\lVert A\rVert}
+\left( \frac{\lVert \delta A \rVert}{\lVert A \rVert} + \frac{\lVert \delta b \rVert}{\lVert b \rVert} \right).
+$$
+</Proposition>
+
+The practical reading is a rule of thumb: with $\kappa_2(A) \approx 10^{k}$ in binary64, roughly
+$16 - k$ significant decimal digits survive. At $\kappa_2 = 10^{16}$ nothing survives, and the
+computed solution carries no information about the exact one, whatever algorithm produced it.
+
+### Positive definiteness
+
+$A$ is symmetric positive definite when $A = A^{\mathsf{T}}$ and $x^{\mathsf{T}}Ax > 0$ for all
+$x \neq 0$. Equivalent characterisations, each used somewhere in this reference: all eigenvalues
+positive; all leading principal minors positive; a Cholesky factorization exists with positive
+diagonal. The last is the only one cheap to test, and it is a test by attempted computation
+rather than by inspection.
+
+Positive definiteness licenses two things. It makes $\langle x, y\rangle_A = x^{\mathsf{T}}Ay$ an
+inner product, which is what conjugate gradient minimises in. And it removes the need for
+pivoting in Cholesky factorization, which halves the arithmetic and removes data-dependent
+control flow from the inner loop.
 
 ## C++ representation
 
-The vector-space axioms as an interface, and a matrix as an operator rather than as data:
+### Spaces and operators as concepts
 
 ```cpp
 #include <concepts>
@@ -117,26 +235,82 @@ template <class A, class V>
 concept LinearOperator = requires(const A& op, const V& x, V& y) {
     { op.rows() } -> std::convertible_to<std::size_t>;
     { op.cols() } -> std::convertible_to<std::size_t>;
-    op.apply(x, y);                 // y ← A x
+    op.apply(x, y);                 // y <- A x
 };
 
 template <class A, class V>
 concept SelfAdjointOperator = LinearOperator<A, V>;
-// Semantic requirement: ⟨Ax, y⟩ = ⟨x, Ay⟩ for all x, y.
+// Semantic requirement: <Ax, y> == <x, Ay> for all x, y.
 
 }  // namespace hpc
 ```
 
-The `LinearOperator` concept is the load-bearing abstraction. A dense matrix, a sparse
-matrix, a finite-difference stencil applied without assembly, and a factored preconditioner
-are all models, and every Krylov method in
-[Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra) is written
-against it.
+#### Why the operator concept is the load-bearing one
+
+`LinearOperator` admits a dense matrix, a sparse matrix, a finite-difference stencil applied
+without assembly, a factored preconditioner, and a Gram operator $B^{\mathsf{T}}B$ applied as two
+products without forming the product. The last is the case that justifies the abstraction:
+forming $B^{\mathsf{T}}B$ costs $\Theta(mn^2)$ and squares the condition number, whereas applying
+it costs $\Theta(mn)$ and does neither.
+
+#### Semantic obligations
+
+```cpp
+// Semantic requirements for VectorSpace<V, F>:
+//   S1. (V, +) is an abelian group.
+//   S2. Scalar multiplication distributes over both additions.
+//   S3. 1 * x == x.
+//
+// For InnerProductSpace, additionally:
+//   S4. <x, y> is linear in its second argument and conjugate-symmetric.
+//   S5. <x, x> > 0 for x != 0.
+//   S6. norm(x) == sqrt(<x, x>).
+//
+// For SelfAdjointOperator, additionally:
+//   S7. <Ax, y> == <x, Ay>.
+//   S8. apply is a pure function of its input.
+```
+
+S1 to S3 fail for floating-point vectors by the bounds of
+[Numerical Analysis](/docs/mathematics/numerical-analysis). S7 is the obligation that conjugate
+gradient depends on and that no compiler checks, which is why the implementation there tests the
+curvature it computes rather than trusting the caller.
+
+### Dimensions as types or as values
+
+Fixed extents make conformability a deduction problem; dynamic extents make it a precondition:
+
+```cpp
+#include <cstddef>
+#include <mdspan>
+
+namespace hpc {
+
+// Static extents: a non-conforming product fails to deduce.
+template <class T, std::size_t M, std::size_t K, std::size_t N>
+constexpr auto multiply(std::mdspan<const T, std::extents<std::size_t, M, K>> A,
+                        std::mdspan<const T, std::extents<std::size_t, K, N>> B)
+    -> std::mdspan<T, std::extents<std::size_t, M, N>>;
+
+// Dynamic extents: conformability is a documented precondition.
+// Requires: A.extent(1) == B.extent(0).
+void multiply(std::mdspan<const double, std::dextents<std::size_t, 2>> A,
+              std::mdspan<const double, std::dextents<std::size_t, 2>> B,
+              std::mdspan<double, std::dextents<std::size_t, 2>> C) noexcept;
+
+}  // namespace hpc
+```
+
+The static form is right for small fixed shapes, where it also unlocks full unrolling; the
+dynamic form is right above a few tens, where an instantiation per shape would dominate build
+time and instruction cache. The rule and its justification are in
+[Type-Level Programming](/docs/formal-cpp/type-level-programming).
 
 ## Implementation
 
-The conjugate-gradient iteration, written against the operator concept, is the canonical
-demonstration that the abstraction is the right one:
+### Conjugate gradient, written against the operator
+
+The canonical demonstration that the abstraction is the right one:
 
 ```cpp
 #include <cmath>
@@ -197,68 +371,149 @@ cg_result conjugate_gradient(const Operator& A,
 ```
 
 The workspace is supplied by the caller rather than allocated, which keeps the routine usable
-from a context with a fixed memory budget and makes the $\Theta(n)$ working set explicit in
-the signature.
+from a context with a fixed memory budget and makes the $\Theta(n)$ working set explicit in the
+signature.
+
+### Orthogonalisation, and why the obvious form is wrong
+
+Classical Gram-Schmidt is algebraically correct and numerically useless: the computed vectors lose
+orthogonality at a rate proportional to $\kappa_2(A)^2$. The modified form loses it at a rate
+proportional to $u\,\kappa_2(A)$, and Householder reflections do not lose it to first order.
+
+```cpp
+#include <cmath>
+#include <cstddef>
+#include <span>
+
+namespace hpc {
+
+// Modified Gram-Schmidt: each new vector is orthogonalised against the
+// already-orthogonalised basis one vector at a time, using the updated vector
+// for each projection. Loss of orthogonality is O(u kappa) rather than
+// O(u kappa^2).
+inline void modified_gram_schmidt(std::span<std::span<double>> columns) {
+    for (std::size_t j = 0; j < columns.size(); ++j) {
+        for (std::size_t i = 0; i < j; ++i) {
+            const double proj = inner_product(columns[i], columns[j]);
+            for (std::size_t k = 0; k < columns[j].size(); ++k) {
+                columns[j][k] -= proj * columns[i][k];
+            }
+        }
+        const double nrm = std::sqrt(inner_product(columns[j], columns[j]));
+        for (double& v : columns[j]) { v /= nrm; }
+    }
+}
+
+}  // namespace hpc
+```
+
+The difference between the two variants is which vector is used to compute the projection, and it
+changes the attainable accuracy by a factor of $\kappa$. This is the standard illustration that
+algebraic equivalence does not imply numerical equivalence.
+
+### Estimating a condition number
+
+$\kappa_2$ requires the smallest singular value and is therefore not computed directly in
+practice. The standard substitute estimates $\lVert A^{-1}\rVert_1$ with a few solves against an
+existing factorization:
+
+```cpp
+namespace hpc {
+
+// Hager and Higham 1-norm estimator: about five triangular solves against an
+// existing LU factorization, giving a lower bound on ||A^{-1}||_1 that is
+// within a small factor in practice.
+double estimate_condition_1(const auto& lu_factorization);
+
+}  // namespace hpc
+```
+
+An estimate that is occasionally too small by a factor of two is adequate, because the quantity
+is used to decide how many digits to trust, and that decision is made on an order of magnitude.
 
 ## Complexity
 
 <Complexity
   rows={[
-    {operation: 'Inner product, dense', time: 'Θ(n)', space: 'Θ(1)', note: '2n flops, 2n·8 bytes; intensity 1/8 flop/byte'},
-    {operation: 'y ← αAx + y, dense', time: 'Θ(mn)', space: 'Θ(1)', note: 'Intensity ≈ 1/4 flop/byte; bandwidth-bound'},
-    {operation: 'C ← AB, dense n × n', time: 'Θ(n³)', space: 'Θ(1)', note: 'Intensity Θ(n); compute-bound when blocked'},
+    {operation: 'Inner product, dense', time: 'Θ(n)', space: 'Θ(1)', note: '2n flops, 16n bytes; intensity 1/8'},
+    {operation: 'axpy', time: 'Θ(n)', space: 'Θ(1)', note: '2n flops, 24n bytes; intensity 1/12'},
+    {operation: 'y = αAx + y, dense', time: 'Θ(mn)', space: 'Θ(1)', note: 'Intensity about 1/4; bandwidth-bound'},
+    {operation: 'C = AB, dense n × n', time: 'Θ(n³)', space: 'Θ(1)', note: 'Intensity Θ(b) when blocked; compute-bound'},
+    {operation: 'Cholesky', time: '(1/3)n³ flops', space: 'Θ(1) extra', note: 'No pivoting needed'},
+    {operation: 'LU with partial pivoting', time: '(2/3)n³ flops', space: 'Θ(n) pivots', note: 'Backward stable in practice'},
+    {operation: 'Householder QR, m × n', time: '2mn² − (2/3)n³', space: 'Θ(n)', note: 'Orthogonality to working accuracy'},
+    {operation: 'Symmetric eigenproblem', time: '(4/3)n³ + Θ(n²)', space: 'Θ(n²)', note: 'Tridiagonal reduction dominates'},
+    {operation: 'Thin SVD, m ≫ n', time: 'about 6mn² + 20n³', space: 'Θ(mn)', note: 'Golub and Kahan'},
     {operation: 'CG iteration', time: 'Θ(nnz + n)', space: 'Θ(n)', note: 'One operator application per step'},
-    {operation: 'CG to relative tolerance ε', time: 'Θ(√κ · log(1/ε)) iterations', space: 'Θ(n)', note: 'κ = condition number in the A-norm'},
-    {operation: 'Dense LU with partial pivoting', time: '(2/3)n³ flops', space: 'Θ(n²)', note: 'Blocked form reaches GEMM throughput'},
+    {operation: 'CG to relative tolerance ε', time: 'Θ(√κ log(1/ε)) iterations', space: 'Θ(n)', note: 'κ in the 2-norm'},
   ]}
   unit="n-dimensional problems, arithmetic model"
 />
 
 ## Performance considerations
 
-The distinction that organises all dense linear algebra is arithmetic intensity: operations
-per byte moved. Level-1 operations (inner product, `axpy`) have intensity $O(1)$ and are
-bandwidth-bound; level-2 (matrix–vector) likewise; level-3 (matrix–matrix) has intensity
+### Arithmetic intensity organises everything
+
+The distinction that organises dense linear algebra is operations per byte moved. Level-1 and
+level-2 operations have intensity $O(1)$ and are bandwidth-bound; level-3 has intensity
 $\Theta(b)$ for a blocking factor $b$ and is the only level that can approach peak.
 
-The consequence is architectural rather than local: an algorithm is restructured so that its
-arithmetic occurs in level-3 operations. Blocked LU performs the same $\tfrac{2}{3}n^3$
-operations as the unblocked form and runs an order of magnitude faster, because the
-operations occur inside `GEMM` calls on cache-resident blocks. See
-[Cache Locality](/docs/high-performance/cache-locality) for the transfer-count analysis.
+The consequence is architectural rather than local. An algorithm is restructured so that its
+arithmetic occurs in level-3 operations: blocked LU performs the same $\tfrac{2}{3}n^3$ operations
+as the unblocked form and runs an order of magnitude faster, because those operations occur inside
+matrix-matrix products on cache-resident blocks. The transfer-count analysis is in
+[Cache Locality](/docs/high-performance/cache-locality).
 
-For iterative methods the picture inverts. A sparse operator application is bandwidth-bound
-and irreducibly so, and the useful levers are the sparse storage format, the ordering of the
-unknowns, and the preconditioner — which trades operator applications for a better
-$\kappa$ and is therefore an algorithmic rather than a hardware optimisation.
+### Iterative methods invert the picture
 
-Numerical conditioning bounds what any implementation can deliver. If $\kappa_2(A) \approx
-10^{12}$ in binary64, roughly four significant digits survive, and no arrangement of the
-arithmetic recovers them; the response is reformulation, scaling, or extended precision, not
-tuning.
+For sparse iterative methods the operator application is bandwidth-bound and irreducibly so. The
+available levers are the storage format, the ordering of the unknowns, and the preconditioner,
+which trades operator applications for a better $\kappa$ and is therefore an algorithmic rather
+than a hardware optimisation. A preconditioner that halves the iteration count and triples the
+cost per iteration is a loss, and only the product distinguishes them.
+
+### Conditioning bounds what any implementation can deliver
+
+If $\kappa_2(A) \approx 10^{12}$ in binary64, roughly four significant digits survive, and no
+arrangement of the arithmetic recovers them. The responses are reformulation, scaling, or
+extended precision, not tuning. Iterative refinement in a higher precision is the cheapest of
+these and is developed in
+[Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra).
+
+### Symmetry is worth exploiting twice
+
+Exploiting symmetry halves both the storage and the arithmetic, and it also removes pivoting from
+the factorization, which removes data-dependent control flow from the inner loop. The combination
+is usually worth more than the factor of two that the operation count alone suggests.
 
 ## Limitations
 
-Concepts state the operations of a vector space and cannot state its axioms. `VectorSpace<V,
-F>` is satisfied by types whose addition is not associative — which includes every
-floating-point vector type in use.
+Concepts state the operations of a vector space and cannot state its axioms. `VectorSpace<V, F>`
+is satisfied by types whose addition is not associative, which includes every floating-point
+vector type in use.
 
-The `LinearOperator` concept cannot state that an operator is symmetric or positive definite,
-and conjugate gradient applied to an operator that is neither may converge to something,
-diverge, or stall, without any diagnostic. Where the property is essential, it is checked
-probabilistically at debug level — $\langle Ax, y \rangle \approx \langle x, Ay \rangle$ for
-random $x, y$ — and documented as a precondition.
+The `LinearOperator` concept cannot state that an operator is symmetric or positive definite.
+Conjugate gradient applied to an operator that is neither may converge to something, diverge, or
+stall, without any diagnostic. Where the property is essential it is checked probabilistically at
+debug level, by testing $\langle Ax, y \rangle \approx \langle x, Ay \rangle$ for random
+$x, y$, and documented as a precondition.
 
-Dimensions are runtime values in the interface above, so conformability is a precondition
-rather than a type error. Fixed-extent `mdspan` moves the check to translation time at the
-cost of an instantiation per shape.
+Dimensions are runtime values in the dynamic interface, so conformability is a precondition
+rather than a type error. Fixed-extent `mdspan` moves the check to translation time at the cost of
+an instantiation per shape.
+
+The $2$-norm and the condition number in it are not computable at the cost of the operations they
+qualify, so they are estimated. Estimates are lower bounds, and an estimator that under-reports by
+a factor of two is normal.
 
 ## Related entries
 
 [Algebra](/docs/mathematics/algebra) supplies the field;
 [Numerical Analysis](/docs/mathematics/numerical-analysis) the error model;
 [Numerical Linear Algebra](/docs/scientific-computing/numerical-linear-algebra) the
-factorizations; [Data Layout](/docs/high-performance/data-layout) the storage decisions.
+factorizations; [Data Layout](/docs/high-performance/data-layout) the storage decisions;
+[Conjugate Gradient](/docs/examples/conjugate-gradient) a complete derivation using this
+material.
 
 ## References
 
@@ -267,3 +522,5 @@ factorizations; [Data Layout](/docs/high-performance/data-layout) the storage de
 - N. J. Higham, *Accuracy and Stability of Numerical Algorithms*, 2nd ed., SIAM, 2002.
 - C. Eckart and G. Young, *The approximation of one matrix by another of lower rank*,
   Psychometrika 1, 1936.
+- N. J. Higham, *FORTRAN Codes for Estimating the One-Norm of a Real or Complex Matrix*, ACM TOMS
+  14(4), 1988.

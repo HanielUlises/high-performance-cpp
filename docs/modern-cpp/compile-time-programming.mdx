@@ -22,7 +22,7 @@ values that are part of the program image rather than computed by it.
 
 <Definition title="Constant evaluation">
 An expression $e$ is a *core constant expression* when its evaluation, following the ordinary
-semantics of the language, does not perform any of a finite list of prohibited operations —
+semantics of the language, does not perform any of a finite list of prohibited operations:
 reading an object whose lifetime began outside the evaluation, calling a non-`constexpr`
 function, undefined behaviour, and so on. A translator that must produce a constant, or that
 is permitted to and chooses to, evaluates $e$ by an interpreter over the abstract machine.
@@ -65,7 +65,7 @@ Floating-point evaluation is the point at which the requirement bites hardest. T
 machine's arithmetic is exact IEEE-754 with round-to-nearest, while a runtime evaluation may
 use fused multiply-add, extended precision registers, or reassociation permitted by fast-math
 options. A constant-evaluated result may therefore differ from the runtime result unless
-those options are excluded — a real hazard for tables computed at translation time and
+those options are excluded, a real hazard for tables computed at translation time and
 compared against runtime recomputation.
 
 Termination is bounded by implementation limits rather than by the language: a constant
@@ -142,8 +142,8 @@ constexpr double reciprocal(double x) {
 ```
 
 `constinit` states that a variable with static storage duration is initialised during
-translation, turning a silent dynamic initialisation — with its order-of-initialisation
-hazards — into a diagnostic:
+translation, turning a silent dynamic initialisation (with its order-of-initialisation
+hazards) into a diagnostic:
 
 ```cpp
 constinit double reference_tolerance = 1e-12;
@@ -204,7 +204,7 @@ compiler's time-trace facility rather than guessing which header is expensive.
 
 Constant evaluation cannot allocate memory that outlives the evaluation, so a `constexpr`
 computation returning a `std::vector` is well-formed only if the vector is destroyed before
-the evaluation ends. Fixed-extent results — `std::array` with the size as a parameter — are
+the evaluation ends. Fixed-extent results (`std::array` with the size as a parameter) are
 the portable form, and computing the size requires a separate `consteval` pass over the same
 inputs.
 

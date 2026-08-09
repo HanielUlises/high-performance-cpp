@@ -33,8 +33,8 @@ the working set of the inner loops fits in a chosen level of cache.
 Consider the three-loop matrix multiplication $C \mathrel{+}= AB$ for $n \times n$ matrices
 with $n^2 \gg M$. In the natural loop order, the innermost loop streams a row of $A$ and a
 column of $B$ per output element; the column has stride $n$, so every access to $B$ fetches a
-full line and uses one word of it. The transfer count is $\Theta(n^3)$ — one line per
-multiply-add — and the kernel runs at memory bandwidth.
+full line and uses one word of it. The transfer count is $\Theta(n^3)$ (one line per
+multiply-add) and the kernel runs at memory bandwidth.
 
 Blocking into $b \times b$ tiles with $3b^2 \le M$ changes this. Each pair of tiles is loaded
 once and participates in $\Theta(b^3)$ operations, so
@@ -68,7 +68,7 @@ $$
 b \le \sqrt{\frac{M}{3\,\mathrm{sizeof}(T)}},
 $$
 
-giving $b \approx 209$ for $M = 1$ MB and 8-byte elements — in practice reduced to leave room
+giving $b \approx 209$ for $M = 1$ MB and 8-byte elements: in practice reduced to leave room
 for the output tile in registers, associativity effects, and the other data the loop touches.
 
 The cache-oblivious alternative avoids naming $M$ and $B$ at all. Recursive subdivision of the
@@ -122,8 +122,8 @@ void gemm_blocked(std::mdspan<const double, std::dextents<std::size_t, 2>> A,
 ```
 
 The innermost loop runs over contiguous `j` in both `B` and `C`, so both stream; `a` is
-invariant in that loop and is kept in a register. This ordering — `i, p, j` rather than
-`i, j, p` — is the loop interchange that makes the kernel vectorizable, and it is a
+invariant in that loop and is kept in a register. This ordering (`i, p, j` rather than
+`i, j, p`) is the loop interchange that makes the kernel vectorizable, and it is a
 correctness-preserving transformation only because floating-point addition is being
 reassociated across `p`, which the accumulation into `C` already commits to.
 
@@ -156,8 +156,8 @@ with the benchmark.
 Padding is applied when a leading dimension is a power of two. With a 16-way associative cache
 of 32 KB and 64-byte lines, addresses separated by 2 KB map to the same set; a $512 \times
 512$ matrix of doubles has a row stride of exactly 4 KB, so the columns of a tile all collide
-and the effective associativity collapses. Padding the leading dimension by one line — 8
-doubles — removes the conflict entirely and costs $O(n)$ memory.
+and the effective associativity collapses. Padding the leading dimension by one line (8
+doubles) removes the conflict entirely and costs $O(n)$ memory.
 
 Loop fusion is applied where two passes over the same data are separated only by an
 intermediate. Computing $z = \alpha x + \beta y$ then $s = \langle z, z \rangle$ as two loops

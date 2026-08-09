@@ -17,7 +17,7 @@ Two practical questions motivate it.
 
 The first is what a generic interface actually promises. A template constrained by a concept
 promises that the substitution succeeds and the syntax exists. It does not promise that the
-operations behave — that addition is associative, that a comparison is a strict weak ordering,
+operations behave: that addition is associative, that a comparison is a strict weak ordering,
 that a copy is indistinguishable from its source. Separating the part the compiler checks from
 the part it does not is a prerequisite for reasoning about generic code, and the separation is
 formal rather than stylistic.
@@ -48,9 +48,9 @@ parts.
 <Chain
   compact
   stages={[
-    {label: 'Checked by the compiler — syntax, arity, types, constraint satisfaction'},
-    {label: 'Stated and unchecked — algebraic laws, complexity, preconditions on values'},
-    {label: 'Established by other means — property tests, contracts, proof'},
+    {label: 'Checked by the compiler: syntax, arity, types, constraint satisfaction'},
+    {label: 'Stated and unchecked: algebraic laws, complexity, preconditions on values'},
+    {label: 'Established by other means: property tests, contracts, proof'},
   ]}
 />
 

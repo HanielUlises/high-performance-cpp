@@ -99,7 +99,7 @@ namespace hpc {
 constexpr bool contains_sorted(std::span<const double> xs, double value) noexcept;
 
 // Complexity: Θ(log n) comparisons, Θ(1) space.
-// Memory: Θ(log n) transfers, each a cache miss for n ≫ M — the constant
+// Memory: Θ(log n) transfers, each a cache miss for n ≫ M; the constant
 // is far worse per comparison than the linear scan above.
 constexpr bool binary_search_sorted(std::span<const double> xs, double value) noexcept;
 
@@ -177,7 +177,7 @@ derived.
 
 The three-hundredfold spread between the cost of an arithmetic operation and a main-memory
 access means that a model counting only arithmetic is predictive exactly when the data is
-resident. Establishing residency — by blocking, by layout, by fusion — is what converts an
+resident. Establishing residency (by blocking, by layout, by fusion) is what converts an
 arithmetic-model bound into a running time.
 
 Branch misprediction, at roughly 15–20 cycles, is invisible to every model above. For
@@ -198,7 +198,7 @@ operation count.
 
 Cache models assume full associativity and optimal replacement. Real caches are set
 associative with a pseudo-LRU policy, and conflict misses from power-of-two strides can
-degrade a blocked kernel by a factor of several — the reason arrays are padded to break the
+degrade a blocked kernel by a factor of several; the reason arrays are padded to break the
 stride.
 
 The models assume a fixed cost per operation, and hardware does not: denormal inputs, division

@@ -2,7 +2,7 @@
 title: Analysis
 sidebar_label: Analysis
 sidebar_position: 3
-description: Continuity, differentiability, convergence and approximation, and the estimates on which numerical methods rest.
+description: "Continuity, differentiability, convergence and approximation, and the estimates on which numerical methods rest."
 ---
 
 # Analysis
@@ -17,18 +17,62 @@ description: Continuity, differentiability, convergence and approximation, and t
 
 ## Definition
 
-Analysis supplies the notions of nearness, limit and rate that every approximation argument
-uses.
+Analysis supplies the notions of nearness, limit and rate that every approximation argument uses.
+
+### Convergence and its order
 
 <Definition title="Convergence and order">
-A sequence $(x_k)$ in a normed space converges to $x^\*$ when $\lVert x_k - x^\* \rVert \to
-0$. It converges with *order* $p \ge 1$ and *rate* $C$ when
+A sequence $(x_k)$ in a normed space converges to $x^{*}$ when
+$\lVert x_k - x^{*} \rVert \to 0$. It converges with *order* $p \ge 1$ and *rate* $C$ when
 $$
-\lVert x_{k+1} - x^\* \rVert \le C \lVert x_k - x^\* \rVert^{p}
+\lVert x_{k+1} - x^{*} \rVert \le C \lVert x_k - x^{*} \rVert^{p}
 $$
-for all sufficiently large $k$, with $C < 1$ required when $p = 1$. The cases $p = 1$, $p =
-2$ are called linear and quadratic convergence; $p = 1$ with $C \to 0$ is superlinear.
+for all sufficiently large $k$, with $C < 1$ required when $p = 1$. The cases $p = 1$ and
+$p = 2$ are called linear and quadratic convergence; $p = 1$ with $C \to 0$ is superlinear.
 </Definition>
+
+The three cases behave so differently that they are worth tabulating. Starting from an error of
+$10^{-1}$, the number of iterations needed to reach $10^{-16}$:
+
+| Order | Rate | Iterations to $10^{-16}$ |
+| --- | --- | --- |
+| Linear | $C = 0.9$ | about 330 |
+| Linear | $C = 0.5$ | about 50 |
+| Linear | $C = 0.1$ | 15 |
+| Superlinear | $p = 1.618$ | about 8 |
+| Quadratic | $p = 2$ | 5 |
+
+A method's order is therefore worth more than any constant factor in the cost per iteration,
+unless the per-iteration costs differ by more than an order of magnitude. This is the calculation
+that decides between Newton and secant methods, and between gradient and quasi-Newton methods in
+[Optimization](/docs/mathematics/optimization).
+
+### Continuity, differentiability, smoothness
+
+Continuity is what makes bisection work: a sign change over an interval implies a root inside it,
+by the intermediate value theorem, with no differentiability required.
+
+Differentiability is what makes local models possible. A function with a Lipschitz derivative
+admits a linear model with quadratic remainder, which is the basis of Newton's method; twice
+differentiability admits a quadratic model, which is the basis of trust-region methods.
+
+Smoothness classes $C^k$ determine the attainable order of every discretisation. A method of
+nominal order $p$ applied to a function in $C^k$ with $k < p$ delivers order $k$ at best, and no
+implementation effort changes this. It is the single most common reason a high-order method
+disappoints in practice.
+
+#### Lipschitz constants
+
+<Definition title="Lipschitz continuity">
+$f$ is Lipschitz on $D$ with constant $L$ when
+$\lVert f(x) - f(y) \rVert \le L \lVert x - y \rVert$ for all $x, y \in D$. If $f$ is
+differentiable, the smallest such $L$ is $\sup_{x \in D} \lVert f'(x) \rVert$.
+</Definition>
+
+Lipschitz constants appear in every convergence bound in this reference, and they are almost never
+known. Their role is to establish the *form* of a bound, not to evaluate it: the statement that
+gradient descent needs $\Theta(L/\mu)$ iterations tells one that ill-conditioning is expensive
+without telling one how many iterations to budget.
 
 ## Motivation
 
@@ -36,19 +80,31 @@ Numerical methods are approximations, and the questions asked of them are analyt
 iteration converge, from which starting points, how fast, and what does the answer cost to a
 given accuracy.
 
-The order of convergence determines the shape of the cost. A linearly convergent method needs
-$\Theta(\log(1/\varepsilon))$ iterations for accuracy $\varepsilon$; a quadratically
-convergent one needs $\Theta(\log\log(1/\varepsilon))$, which for practical tolerances is a
-small constant. The distinction is worth more than any constant factor in the iteration body,
-which is why the analytic question is settled before the implementation is tuned.
+### Order determines cost
 
-The second use is truncation error. Every discretisation replaces a limit by a finite
-quantity, and the Taylor expansion that quantifies the replacement is what gives a method its
-order. A second-order method halves its error by a factor of four when the step is halved; a
-first-order method by two. Over the range of step sizes that a computation actually uses,
-this decides which method is feasible.
+The order of convergence determines the shape of the cost. A linearly convergent method needs
+$\Theta(\log(1/\varepsilon))$ iterations for accuracy $\varepsilon$; a quadratically convergent one
+needs $\Theta(\log\log(1/\varepsilon))$, which for practical tolerances is a small constant. The
+distinction is worth more than any constant factor in the iteration body, which is why the
+analytic question is settled before the implementation is tuned.
+
+### Truncation error determines the discretisation
+
+Every discretisation replaces a limit by a finite quantity, and the Taylor expansion that
+quantifies the replacement gives a method its order. A second-order method reduces its error by a
+factor of four when the step is halved; a first-order method by two. Over the range of step sizes
+a computation actually uses, this decides which method is feasible.
+
+### The two errors compete
+
+Discretisation error decreases with the step size and rounding error increases with the number of
+operations, so there is an optimal step size and it is not the smallest representable one. The
+clearest instance is the finite-difference derivative, treated below, where the optimum is
+$h \approx \sqrt{u}$ and the attainable accuracy is only half the working precision.
 
 ## Formal formulation
+
+### Taylor expansion
 
 Taylor's theorem with Lagrange remainder is the workhorse. For $f \in C^{n+1}$ on an interval
 containing $a$ and $x$,
@@ -59,45 +115,94 @@ $$
 
 for some $\xi$ between $a$ and $x$. Every truncation-error bound in
 [Numerical Integration](/docs/scientific-computing/numerical-integration) and
-[Differential Equations](/docs/scientific-computing/differential-equations) is an instance.
+[Differential Equations](/docs/scientific-computing/differential-equations) is an instance of it.
 
-The Banach fixed-point theorem gives existence and the linear rate together.
+#### Finite differences and the optimal step
+
+Applying the expansion to the forward difference gives
+
+$$
+\frac{f(x+h) - f(x)}{h} = f'(x) + \frac{h}{2}f''(\xi),
+$$
+
+so the truncation error is $O(h)$. In floating point the evaluation of $f$ carries a relative
+error of order $u$, contributing a rounding error of order $u|f(x)|/h$. The total is minimised at
+
+$$
+h^{*} \approx \sqrt{\frac{2u|f(x)|}{|f''|}} \approx \sqrt{u} \approx 1.5 \times 10^{-8},
+$$
+
+with attainable accuracy $O(\sqrt{u}) \approx 10^{-8}$: half the digits are gone. The central
+difference improves this to $O(u^{2/3})$ at twice the cost, and
+[Automatic Differentiation](/docs/scientific-computing/automatic-differentiation) removes the
+trade entirely by computing derivatives exactly to rounding.
+
+### Fixed points and contraction
 
 <Theorem title="Contraction mapping">
 Let $X$ be a complete metric space and $T : X \to X$ satisfy $d(Tx, Ty) \le L\, d(x,y)$ with
-$L < 1$. Then $T$ has a unique fixed point $x^\*$, the iteration $x_{k+1} = Tx_k$ converges to
-it from every starting point, and
+$L < 1$. Then $T$ has a unique fixed point $x^{*}$, the iteration $x_{k+1} = Tx_k$ converges to it
+from every starting point, and
 $$
-d(x_k, x^\*) \le \frac{L^k}{1 - L} d(x_1, x_0).
+d(x_k, x^{*}) \le \frac{L^k}{1 - L} d(x_1, x_0).
 $$
 </Theorem>
 
-Newton's method is the case where $L \to 0$ near the root. For $f$ twice continuously
-differentiable with $f(x^\*) = 0$ and $f'(x^\*) \neq 0$,
+The theorem is the source of three practical facts. Convergence is global, which is rare and
+valuable. The rate is exactly $L$, so a contraction with $L = 0.99$ is useless in practice
+despite converging. And the error is bounded by the last step divided by $1 - L$, which is the
+justification for step-based stopping criteria and also the reason they underestimate the error
+when $L$ is close to one.
+
+### Newton's method
+
+For $f$ twice continuously differentiable with $f(x^{*}) = 0$ and $f'(x^{*}) \neq 0$,
 
 $$
 x_{k+1} = x_k - \frac{f(x_k)}{f'(x_k)}, \qquad
-|x_{k+1} - x^\*| \le \frac{M}{2m} |x_k - x^\*|^2,
+|x_{k+1} - x^{*}| \le \frac{M}{2m} |x_k - x^{*}|^2,
 $$
 
-with $M = \sup |f''|$ and $m = \inf |f'|$ on a neighbourhood — quadratic convergence, local
-in $x_0$.
+with $M = \sup |f''|$ and $m = \inf |f'|$ on a neighbourhood of the root. The convergence is
+quadratic and local: the hypothesis is that $x_0$ is close enough, and how close is not
+computable from the data available at run time.
 
-Approximation theory bounds what any method of a given class can achieve. For $f \in C^{k}$
-on $[-1,1]$ with $f^{(k)}$ of bounded variation $V$, the best polynomial approximation of
-degree $n$ satisfies
+<Proposition title="Multiple roots destroy the order">
+If $f$ has a root of multiplicity $m > 1$ at $x^{*}$, Newton's method converges linearly with
+rate $1 - 1/m$ rather than quadratically. The modified iteration
+$x_{k+1} = x_k - m f(x_k)/f'(x_k)$ restores quadratic convergence when $m$ is known.
+</Proposition>
+
+The practical signature of a multiple root is a convergence history in which the error decreases
+by a constant factor instead of squaring, together with a residual that stagnates well above the
+rounding level.
+
+### Approximation theory
+
+Approximation theory bounds what any method of a given class can achieve. For $f \in C^{k}$ on
+$[-1,1]$ with $f^{(k)}$ of bounded variation $V$, the best polynomial approximation of degree $n$
+satisfies
 
 $$
 \inf_{\deg p \le n} \lVert f - p \rVert_\infty \le \frac{2V}{\pi k (n-k)^{k}},
 $$
 
-and for analytic $f$ the bound becomes geometric in $n$. This is why spectral methods
-converge faster than any fixed order for smooth problems and no faster than the smoothness
-allows otherwise.
+and for $f$ analytic in a neighbourhood of the interval the bound becomes geometric in $n$. This
+is why spectral methods converge faster than any fixed order for smooth problems, and no faster
+than the smoothness allows otherwise.
+
+#### Conditioning of the representation
+
+Polynomial approximation is only as good as the basis it is expressed in. The monomial basis on
+$[0,1]$ has a Vandermonde matrix with condition number growing exponentially in $n$, so a
+degree-20 fit in that basis is numerically meaningless. The Chebyshev basis on $[-1,1]$ has
+condition number growing polynomially, and interpolation at Chebyshev points has a Lebesgue
+constant of $O(\log n)$ against $O(2^n / (n\log n))$ for equispaced points. The mathematics is
+identical; only the representation differs.
 
 ## C++ representation
 
-The analytic requirements of an iteration, stated as concepts:
+### Analytic requirements as concepts
 
 ```cpp
 #include <concepts>
@@ -109,30 +214,66 @@ template <class F>
 concept RealFunction = std::invocable<F, double> &&
     std::convertible_to<std::invoke_result_t<F, double>, double>;
 
-// Semantic requirements: f is continuous on the interval of use, and
-// derivative(x) is the derivative of value(x) there.
+// Semantic requirements:
+//   S1. f is continuous on the interval of use.
+//   S2. derivative(x) is the derivative of value(x) there.
+//   S3. Both are pure functions of x.
 template <class F>
 concept DifferentiableFunction = RealFunction<F> && requires(const F& f, double x) {
     { f.value(x) }      -> std::convertible_to<double>;
     { f.derivative(x) } -> std::convertible_to<double>;
 };
 
+// Second derivatives are a separate requirement, since methods that need them
+// are a strict subset and the cost of supplying them is often prohibitive.
+template <class F>
+concept TwiceDifferentiableFunction =
+    DifferentiableFunction<F> && requires(const F& f, double x) {
+        { f.second_derivative(x) } -> std::convertible_to<double>;
+    };
+
 }  // namespace hpc
 ```
 
-Newton's method with the analytic hypotheses recorded as preconditions:
+Separating the derivative requirements is the same design move as separating the levels of the
+iterator hierarchy: each level exists because a method's cost or applicability changes there.
+
+### Results that report why they stopped
+
+```cpp
+#include <cstddef>
+
+namespace hpc {
+
+enum class root_status {
+    converged,          // step and residual below tolerance
+    zero_derivative,    // f'(x) vanished: Newton undefined
+    iteration_limit,
+    stagnated,          // step below rounding level, residual not small
+};
+
+struct root_result {
+    double x;
+    double residual;
+    std::size_t iterations;
+    root_status status;
+};
+
+}  // namespace hpc
+```
+
+A boolean success flag conflates the last three cases, which have different remedies: a different
+starting point, a larger budget, and a reformulated problem respectively.
+
+## Implementation
+
+### Newton with the hypotheses recorded
 
 ```cpp
 #include <cmath>
 #include <cstddef>
 
 namespace hpc {
-
-struct root_result {
-    double x;
-    std::size_t iterations;
-    bool converged;
-};
 
 // Requires: f' is non-zero on a neighbourhood of the root containing x0, and
 // f'' is bounded there. Convergence is quadratic and local.
@@ -144,49 +285,81 @@ constexpr root_result newton(const F& f, double x0, double tolerance,
     for (std::size_t k = 0; k < max_iterations; ++k) {
         const double fx = f.value(x);
         const double dfx = f.derivative(x);
-        if (dfx == 0.0) { return {x, k, false}; }
+        if (dfx == 0.0) { return {x, fx, k, root_status::zero_derivative}; }
         const double step = fx / dfx;
         x -= step;
         if (std::abs(step) <= tolerance * (1.0 + std::abs(x))) {
-            return {x, k + 1, true};
+            return {x, f.value(x), k + 1, root_status::converged};
         }
     }
-    return {x, max_iterations, false};
+    return {x, f.value(x), max_iterations, root_status::iteration_limit};
 }
 
 }  // namespace hpc
 ```
 
-The stopping test is relative to the iterate rather than absolute, since an absolute
-tolerance is meaningless without a scale, and mixed relative-absolute in the form used above
-degrades gracefully near a root at the origin.
+The stopping test is relative to the iterate rather than absolute, since an absolute tolerance is
+meaningless without a scale, and the mixed relative-absolute form above degrades gracefully near
+a root at the origin.
 
-## Implementation
+### Globalisation by safeguarding
 
-Two implementation points recur.
+A locally fast method is made globally convergent by combining it with a method that cannot fail.
+The standard construction takes the Newton step when it stays inside the current bracket and
+reduces the interval sufficiently, and bisects otherwise:
 
-The first is that a step-based stopping criterion measures the *previous* error, not the
-current one. Under quadratic convergence the final iterate is far more accurate than the last
-step suggests, so a converged result is typically accurate to $\varepsilon^2$ rather than
-$\varepsilon$; under linear convergence with rate $L$, the error is approximately
-$L/(1-L)$ times the last step, which for $L$ near $1$ is a large underestimate. Stopping
-criteria are therefore stated with the assumed rate.
+```cpp
+#include <cmath>
+#include <cstddef>
 
-The second is that a globally convergent method is built by combining a locally fast one with
-a safeguard. Newton's method diverges from poor starting points; bisection converges always
-and slowly. The standard combination — take the Newton step if it stays inside the current
-bracket and reduces the interval sufficiently, otherwise bisect — inherits both properties
-and is the structure of every production root-finder.
+namespace hpc {
+
+// Requires: f(a) and f(b) have opposite signs, and f is continuous on [a, b].
+// Guarantees: convergence, at worst at the bisection rate; in practice at the
+// Newton rate once the iterate enters the region of quadratic convergence.
+template <DifferentiableFunction F>
+root_result safeguarded_newton(const F& f, double a, double b,
+                               double tolerance, std::size_t max_iterations);
+
+}  // namespace hpc
+```
+
+The construction inherits the global convergence of bisection and the local order of Newton, and
+it is the structure of every production root-finder. The cost is one extra function evaluation
+per step in the worst case and none in the typical case.
+
+### Stopping criteria and what they measure
+
+A step-based criterion measures the *previous* error, not the current one. Under quadratic
+convergence the final iterate is far more accurate than the last step suggests, typically by a
+square; under linear convergence with rate $L$ the error is about $L/(1-L)$ times the last step,
+which for $L$ near one is a large underestimate. Criteria are therefore stated together with the
+rate assumed:
+
+$$
+\text{quadratic: } |x_k - x^{*}| \approx |s_k|^2, \qquad
+\text{linear: } |x_k - x^{*}| \approx \frac{L}{1-L}|s_k| .
+$$
+
+### The rounding floor
+
+No iteration can reduce the residual below the level at which $f$ is evaluated accurately, which
+is about $\kappa_f |f| u$ for a function of condition number $\kappa_f$. Beyond that point the
+iterates perform a random walk in the last bits. A stopping criterion that does not account for
+this exhausts the iteration budget on a converged problem, and reports failure on a success.
 
 ## Complexity
 
 <Complexity
   rows={[
-    {operation: 'Bisection to accuracy ε', time: 'Θ(log(1/ε)) evaluations', space: 'Θ(1)', note: 'Interval halves each step'},
+    {operation: 'Bisection to accuracy ε', time: 'Θ(log(1/ε)) evaluations', space: 'Θ(1)', note: 'Interval halves each step; global'},
     {operation: 'Newton to accuracy ε', time: 'Θ(log log(1/ε))', space: 'Θ(1)', note: 'Local; two evaluations per step'},
-    {operation: 'Secant to accuracy ε', time: 'order φ ≈ 1.618', space: 'Θ(1)', note: 'One evaluation per step'},
-    {operation: 'Fixed-point iteration, rate L', time: 'Θ(log(1/ε)/log(1/L))', space: 'Θ(1)', note: 'Degrades as L → 1'},
-    {operation: 'Composite trapezoid to accuracy ε', time: 'Θ(ε^{-1/2}) evaluations', space: 'Θ(1)', note: 'Second-order truncation'},
+    {operation: 'Secant to accuracy ε', time: 'order 1.618', space: 'Θ(1)', note: 'One evaluation per step'},
+    {operation: 'Safeguarded Newton', time: 'Θ(log(1/ε)) worst, Θ(log log(1/ε)) typical', space: 'Θ(1)', note: 'Global and locally quadratic'},
+    {operation: 'Fixed-point iteration, rate L', time: 'Θ(log(1/ε)/log(1/L))', space: 'Θ(1)', note: 'Degrades sharply as L → 1'},
+    {operation: 'Forward-difference derivative', time: '2 evaluations', space: 'Θ(1)', note: 'Accuracy O(√u) at best'},
+    {operation: 'Central-difference derivative', time: '2 evaluations', space: 'Θ(1)', note: 'Accuracy O(u^{2/3})'},
+    {operation: 'Composite trapezoid to accuracy ε', time: 'Θ(ε^{−1/2}) evaluations', space: 'Θ(1)', note: 'Second-order truncation'},
     {operation: 'Gauss–Legendre, analytic integrand', time: 'Θ(log(1/ε))', space: 'Θ(n)', note: 'Geometric convergence'},
   ]}
   unit="function evaluations"
@@ -194,47 +367,64 @@ and is the structure of every production root-finder.
 
 ## Performance considerations
 
-For an iteration whose per-step cost is dominated by a function evaluation — a PDE residual,
-a simulation, a large matrix application — the only quantity that matters is the number of
-evaluations, and the order of convergence dominates every implementation detail. Where the
-derivative is expensive, the secant method's order of $\varphi \approx 1.618$ at one
-evaluation per step beats Newton's order 2 at two evaluations per step, since
-$\varphi > \sqrt{2}$.
+### Evaluations dominate
 
-Rounding sets a floor. Newton's method cannot reduce the residual below the level at which
-$f(x)$ is computed accurately, typically $\kappa |f| u$ for a function of condition number
-$\kappa$; iterating past that point produces a random walk in the last bits. A stopping
-criterion that does not account for it will exhaust the iteration budget on a converged
-problem.
+For an iteration whose per-step cost is dominated by a function evaluation, and that includes
+every case where the function is a partial differential equation residual, a simulation, or a
+large matrix application, the only quantity that matters is the number of evaluations. The order
+of convergence then dominates every implementation detail.
 
-Derivatives computed by finite differences introduce a competing error pair: truncation
-$O(h)$ and rounding $O(u/h)$, minimised at $h \approx \sqrt{u} \approx 1.5 \times 10^{-8}$
-for binary64, giving at best half the available digits. Where the derivative matters, the
-alternative is [Automatic Differentiation](/docs/scientific-computing/automatic-differentiation),
-which is exact to rounding.
+Where the derivative is expensive, the secant method's order of about $1.618$ at one evaluation
+per step beats Newton's order $2$ at two evaluations per step, since $1.618 > \sqrt{2}$. The
+comparison is between order per evaluation, not order per iteration, and stating it that way
+settles the question immediately.
+
+### Reuse across the iteration
+
+Evaluating the value and the derivative together is usually much cheaper than evaluating them
+separately, because they share intermediate quantities. An interface that offers only separate
+accessors forces the caller to pay twice, which is why the optimisation entries in this reference
+carry a fused value-and-gradient requirement.
+
+### Vectorisation across problems
+
+A single scalar iteration vectorises poorly, since the dependence chain is the algorithm. Many
+independent iterations vectorise perfectly, provided each lane can take the same number of steps;
+the standard construction runs a fixed number of iterations on all lanes and masks the converged
+ones, which trades a few wasted evaluations for full vector utilisation.
+
+### Rounding sets the floor, not the tolerance
+
+Tolerances tighter than the rounding floor cost iterations and buy nothing. A solver that accepts
+a tolerance argument should clamp it to a multiple of $u$ scaled by the observed magnitude of the
+function, and report that it did so, rather than silently iterating until the budget is exhausted.
 
 ## Limitations
 
-Convergence theorems are local and their neighbourhoods are not computable in general.
-Statements of the form "converges quadratically for $x_0$ sufficiently close" give no way to
-verify that a given $x_0$ qualifies.
+Convergence theorems are local and their neighbourhoods are not computable in general. Statements
+of the form "converges quadratically for $x_0$ sufficiently close" give no way to verify that a
+given $x_0$ qualifies.
 
 The constants in error bounds involve derivatives of the target function that are usually
-unavailable. Bounds are used to establish the *order* of a method — how the error scales —
-rather than to predict an error, and the practical estimate comes from comparing two
-discretisations.
+unavailable. Bounds are used to establish the order of a method, that is, how the error scales,
+rather than to predict an error. The practical estimate comes from comparing two discretisations.
 
-Smoothness hypotheses fail routinely in applications: a function with a kink converges at the
-rate its smoothness permits regardless of the method's nominal order, and high-order methods
-applied to non-smooth data are slower and less accurate than low-order ones.
+Smoothness hypotheses fail routinely in applications. A function with a kink converges at the rate
+its smoothness permits regardless of the method's nominal order, and high-order methods applied to
+non-smooth data are both slower and less accurate than low-order ones.
+
+Analysis in exact arithmetic says nothing about the rounding floor, which is where every real
+iteration terminates. The two analyses must be combined, and their combination is the subject of
+[Numerical Analysis](/docs/mathematics/numerical-analysis).
 
 ## Related entries
 
 [Numerical Analysis](/docs/mathematics/numerical-analysis) develops the floating-point side;
-[Optimization](/docs/mathematics/optimization) applies the convergence theory to descent
-methods; [Numerical Integration](/docs/scientific-computing/numerical-integration) and
-[Differential Equations](/docs/scientific-computing/differential-equations) apply the
-truncation analysis.
+[Optimization](/docs/mathematics/optimization) applies the convergence theory to descent methods;
+[Numerical Integration](/docs/scientific-computing/numerical-integration) and
+[Differential Equations](/docs/scientific-computing/differential-equations) apply the truncation
+analysis; [Automatic Differentiation](/docs/scientific-computing/automatic-differentiation)
+removes the finite-difference trade.
 
 ## References
 
@@ -242,3 +432,4 @@ truncation analysis.
 - L. N. Trefethen, *Approximation Theory and Approximation Practice*, SIAM, 2013.
 - J. Nocedal and S. Wright, *Numerical Optimization*, 2nd ed., Springer, 2006, chapter 3.
 - P. Deuflhard, *Newton Methods for Nonlinear Problems*, Springer, 2004.
+- R. Brent, *Algorithms for Minimization Without Derivatives*, Prentice-Hall, 1973.

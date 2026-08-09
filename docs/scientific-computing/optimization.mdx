@@ -27,8 +27,8 @@ $$
 
 <Definition title="Globalisation">
 A *globalisation strategy* is the mechanism by which a locally convergent step is made to
-produce global convergence to a stationary point. The two families are line search — take the
-step direction and shorten it until a sufficient-decrease condition holds — and trust region —
+produce global convergence to a stationary point. The two families are line search (take the
+step direction and shorten it until a sufficient-decrease condition holds) and trust region:
 choose the step within a region where a model is trusted, and adjust the region from the
 observed agreement.
 </Definition>
@@ -64,7 +64,7 @@ H_{k+1} = \left(I - \frac{s y^{\mathsf{T}}}{y^{\mathsf{T}}s}\right) H_k
 \left(I - \frac{y s^{\mathsf{T}}}{y^{\mathsf{T}}s}\right) + \frac{s s^{\mathsf{T}}}{y^{\mathsf{T}}s},
 $$
 
-approximating the inverse Hessian, and it is positive definite whenever $y^{\mathsf{T}}s > 0$ —
+approximating the inverse Hessian, and it is positive definite whenever $y^{\mathsf{T}}s > 0$,
 which the curvature condition guarantees. The limited-memory form stores the last $m$ pairs
 $(s_i, y_i)$ and applies $H_k \nabla f_k$ by the two-loop recursion at cost $\Theta(mn)$ without
 forming $H_k$.
@@ -266,8 +266,8 @@ implicitly and converge slowly, or require the trust-region formulation.
 Termination on a small gradient does not certify a minimum: it certifies a stationary point,
 which may be a saddle. Checking requires second-order information.
 
-Inaccurate gradients — from finite differences, from a loosely converged inner solve, or from a
-stochastic estimate — impose an accuracy floor on the solution and cause line-search failures
+Inaccurate gradients (from finite differences, from a loosely converged inner solve, or from a
+stochastic estimate) impose an accuracy floor on the solution and cause line-search failures
 near it. The floor is roughly the square root of the gradient's relative error, which is why
 finite-difference gradients limit the achievable accuracy to about $u^{1/4}$.
 

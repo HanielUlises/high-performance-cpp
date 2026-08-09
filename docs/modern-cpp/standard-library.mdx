@@ -198,7 +198,7 @@ View pipelines vectorize unreliably. A `transform_view` over contiguous data usu
 vectorizes; a `filter_view` never does, because the trip count is data-dependent; and a deep
 pipeline may exceed inlining budgets, at which point every element access becomes a call.
 Numerical inner loops in this reference are therefore written as explicit loops over `span`,
-and views are used at the level of structure — iterating blocks, rows, or non-zero patterns —
+and views are used at the level of structure (iterating blocks, rows, or non-zero patterns)
 where the per-element cost is amortised.
 
 `std::span<const double>` as a parameter type is also an aliasing statement of a weak kind:

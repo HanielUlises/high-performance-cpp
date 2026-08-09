@@ -6,8 +6,8 @@ tags: [numerical-analysis, vectorization, semantics]
 ---
 
 Almost every fast reduction in existence is licensed by a property that floating-point addition
-does not have. The situation is stable, well understood, and routinely misdescribed — as a
-compiler flag, as a precision setting, as a tolerance question — when it is none of those. It is
+does not have. The situation is stable, well understood, and routinely misdescribed (as a
+compiler flag, as a precision setting, as a tolerance question) when it is none of those. It is
 a question about which algorithm is being executed.
 
 <!-- truncate -->
@@ -20,7 +20,7 @@ associative these would agree. It is not, and they do not.
 
 The differences are not pathological. For terms of like sign they are bounded by $\gamma_{n-1}
 \sum |x_i|$ against $\gamma_{n/k + k}\sum|x_i|$, and the reassociated form is *more* accurate
-than the sequential one — the split reduces the depth of the accumulation, and error grows with
+than the sequential one: the split reduces the depth of the accumulation, and error grows with
 depth. For terms of mixed sign with cancellation, both are unbounded relative to the true sum,
 and which is closer is not predictable.
 
@@ -36,7 +36,7 @@ gets the structure exactly backwards.
 `-ffast-math` grants a global permission to reassociate, to assume no NaN or infinity, to
 contract multiplications and additions, and to treat denormals as zero. It applies to every
 floating-point operation in the translation unit, including the ones that are correct only under
-strict semantics — the error-free transformations in a compensated summation, for instance,
+strict semantics: the error-free transformations in a compensated summation, for instance,
 which the flag deletes entirely because `(a - (s - b)) + (b - b')` is algebraically zero and is
 not numerically zero, and the flag says to believe the algebra.
 

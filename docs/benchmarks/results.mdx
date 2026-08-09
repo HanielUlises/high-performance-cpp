@@ -21,7 +21,7 @@ report it.
 
 | Identifier | CPU | Cores | Peak (GFLOP/s) | Triad (GB/s) | Ridge point |
 | --- | --- | --- | --- | --- | --- |
-| *(none recorded)* | — | — | — | — | — |
+| *(none recorded)* | n/a | n/a | n/a | n/a | n/a |
 
 Each identifier expands to a full characterisation in the template given in
 [Machine Model](/docs/benchmarks/machine-model). A machine without a complete characterisation
@@ -48,7 +48,7 @@ The schema for one kernel on one machine:
 
 | Machine | $n$ | Threads | Achieved (GB/s) | Bound (GB/s) | Fraction |
 | --- | --- | --- | --- | --- | --- |
-| *(none recorded)* | — | — | — | — | — |
+| *(none recorded)* | n/a | n/a | n/a | n/a | n/a |
 
 Expected structure, from the model: a compute-bound plateau while both vectors are L1-resident, a
 step down at each cache boundary, and a memory-bound plateau at $I \cdot B = 0.125 B$ beyond the
@@ -58,7 +58,7 @@ last level. See [Inner Product](/docs/examples/inner-product).
 
 | Machine | $n$ | Variant | Threads | Achieved (GFLOP/s) | Fraction of peak |
 | --- | --- | --- | --- | --- | --- |
-| *(none recorded)* | — | — | — | — | — |
+| *(none recorded)* | n/a | n/a | n/a | n/a | n/a |
 
 Expected structure: the naive and interchanged variants flat and low, the blocked variant rising
 with $n$ toward a plateau near peak, and sharp dips at power-of-two $n$ unless the leading
@@ -68,7 +68,7 @@ dimension is padded. See [Matrix Multiplication](/docs/examples/matrix-multiplic
 
 | Machine | Matrix | nnz | Threads | Achieved (GB/s) | Fraction of triad |
 | --- | --- | --- | --- | --- | --- |
-| *(none recorded)* | — | — | — | — | — |
+| *(none recorded)* | n/a | n/a | n/a | n/a | n/a |
 
 Expected structure: a fraction of stream bandwidth determined by the locality of the column
 indices, improving with a bandwidth-reducing ordering. Reporting GFLOP/s against peak for this
@@ -79,7 +79,7 @@ kernel is misleading; the fraction of achievable bandwidth is the correct metric
 
 | Machine | Problem | $n$ | Preconditioner | Iterations | Time (s) | Time per iteration |
 | --- | --- | --- | --- | --- | --- | --- |
-| *(none recorded)* | — | — | — | — | — | — |
+| *(none recorded)* | n/a | n/a | n/a | n/a | n/a | n/a |
 
 Both the iteration count and the time per iteration are required: a preconditioner is evaluated
 on their product. See [Conjugate Gradient](/docs/examples/conjugate-gradient).

@@ -76,7 +76,7 @@ $$
 $$
 
 whereas classical Gram–Schmidt loses orthogonality at a rate proportional to $\kappa_2(A)$ and
-modified Gram–Schmidt at a rate proportional to $u\,\kappa_2(A)$ — which is why Householder is
+modified Gram–Schmidt at a rate proportional to $u\,\kappa_2(A)$, which is why Householder is
 used for factorization and modified Gram–Schmidt only inside Krylov methods where the vectors
 are already nearly orthogonal.
 
@@ -127,7 +127,7 @@ inline std::size_t cholesky_unblocked(
 }  // namespace hpc
 ```
 
-This form performs $\tfrac{1}{3}n^3$ operations with $\Theta(n^3)$ memory traffic — arithmetic
+This form performs $\tfrac{1}{3}n^3$ operations with $\Theta(n^3)$ memory traffic: arithmetic
 intensity $O(1)$, hence bandwidth-bound, hence a small fraction of peak. The blocked form has
 the same operation count and a different traffic profile:
 
@@ -139,7 +139,7 @@ namespace hpc {
 
 // Right-looking blocked Cholesky. Each step factorizes a diagonal block,
 // solves a triangular system for the panel, and updates the trailing
-// submatrix with a symmetric rank-k product — a level-3 operation.
+// submatrix with a symmetric rank-k product, a level-3 operation.
 std::size_t cholesky_blocked(std::mdspan<double, std::dextents<std::size_t, 2>> A,
                              std::size_t block_size = 64) noexcept;
 
@@ -210,8 +210,8 @@ Within the blocked form, the trailing update dominates as $n$ grows, so the qual
 a competent hand-written kernel reaches 60–80 percent; a naive triple loop reaches 3–5 percent.
 Where a vendor library is available, the correct implementation is a call to it.
 
-Parallelism at the level of blocks — a task graph over panel factorizations and updates, rather
-than a fork–join per operation — removes the synchronisation at every step and is what allows
+Parallelism at the level of blocks (a task graph over panel factorizations and updates, rather
+than a fork–join per operation) removes the synchronisation at every step and is what allows
 factorizations to scale to many cores. The dependence structure is the algorithm's, and
 expressing it directly rather than through bulk-synchronous phases is worth a substantial
 factor at high core counts.
@@ -225,7 +225,7 @@ $\kappa_2(A)\,u_{32} < 1$.
 
 Backward stability bounds the perturbation to the problem, not the error in the answer. For
 $\kappa_2(A) = 10^{12}$ in binary64, roughly four digits survive, and the residual will still
-be at the level of rounding — which is why a small residual must never be reported as a small
+be at the level of rounding, which is why a small residual must never be reported as a small
 error.
 
 Partial pivoting has an exponential worst-case growth factor. Matrices attaining it exist and
@@ -237,7 +237,7 @@ but indefinite to within rounding will fail. The failure is informative and must
 not suppressed by adding a shift without recording it.
 
 Dense methods are limited by $\Theta(n^2)$ storage. At $n = 10^5$ a dense matrix in binary64
-requires 80 GB, so problems above that scale must exploit structure — see
+requires 80 GB, so problems above that scale must exploit structure; see
 [Sparse Computation](/docs/scientific-computing/sparse-computation).
 
 ## Related entries

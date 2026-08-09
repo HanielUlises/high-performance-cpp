@@ -33,7 +33,7 @@ it.
 </Definition>
 
 The C++ memory model is not a description of hardware. It is a contract stating which
-reorderings — by the compiler and by the processor — a program may observe, and it is the only
+reorderings (by the compiler and by the processor) a program may observe, and it is the only
 sound basis for reasoning about concurrent C++.
 
 ## Motivation
@@ -71,8 +71,8 @@ W_{\text{data}} \xrightarrow{\text{sb}} S_{\text{rel}} \xrightarrow{\text{sw}} L
 $$
 
 Sequential consistency additionally guarantees a single global order, which is required for
-patterns where two threads write different locations and each reads the other's — the store
-buffer pattern — and which costs a full barrier on x86 stores and additional fences on weakly
+patterns where two threads write different locations and each reads the other's (the store
+buffer pattern) and which costs a full barrier on x86 stores and additional fences on weakly
 ordered architectures.
 
 The cost model for the coherence protocol is what makes contention expensive. A cache line
@@ -163,7 +163,7 @@ contention at all and outperforms any atomic formulation of the same reduction.
 Where sharing is unavoidable, the sequence is: prefer a mutex for anything non-trivial, since
 an uncontended mutex is roughly 20 nanoseconds and correct; move to atomics only where the
 operation is a single word and the contention is measured; and treat lock-free data structures
-as a last resort, since they require reclamation machinery — hazard pointers or RCU — that is
+as a last resort, since they require reclamation machinery (hazard pointers or RCU) that is
 harder than the structure itself.
 
 Memory orders are stated explicitly at every atomic operation rather than defaulted, so that
@@ -201,7 +201,7 @@ False sharing produces the same coherence traffic without any logical sharing, a
 single most common cause of a parallel loop failing to scale. The diagnostic is a scaling curve
 that goes down rather than flat; the fix is cache-line separation.
 
-Weak memory orders help on architectures that need barriers — Arm, POWER, RISC-V — and help
+Weak memory orders help on architectures that need barriers (Arm, POWER, RISC-V) and help
 less on x86, where loads and stores are already acquire and release respectively. Code tuned
 with relaxed orderings on x86 and never tested on a weakly ordered machine is a common source
 of latent defects.

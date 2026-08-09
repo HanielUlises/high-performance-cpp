@@ -17,8 +17,8 @@ description: The core object model, value categories, lifetime and initialisatio
 
 ## Definition
 
-The core language defines a model of *objects* — regions of storage with a type, a lifetime,
-and a value — together with the rules by which expressions produce, name, transfer and
+The core language defines a model of *objects* (regions of storage with a type, a lifetime,
+and a value) together with the rules by which expressions produce, name, transfer and
 destroy them. Every abstraction developed later in this reference is a discipline imposed on
 top of that model, and every performance argument is ultimately a claim about the storage it
 allocates and the traffic it generates.
@@ -107,8 +107,8 @@ b = a \;\Rightarrow\; b = a \;\land\; f(b) = f(a)
 $$
 
 for every function $f$ definable in terms of the type's public operations. Types failing
-this — types whose copies are observably distinct, or whose `operator==` compares
-identities rather than values — are not usable with the standard algorithms, whatever
+this (types whose copies are observably distinct, or whose `operator==` compares
+identities rather than values) are not usable with the standard algorithms, whatever
 compiles.
 
 ## Implementation
@@ -187,8 +187,8 @@ performance-relevant property of the interface.
 
 <Complexity
   rows={[
-    {operation: 'Value-initialise n trivially constructible elements', time: 'Θ(n)', space: '—', note: 'One full write pass; often avoidable'},
-    {operation: 'Default-initialise n trivially constructible elements', time: 'Θ(1)', space: '—', note: 'No writes; values indeterminate'},
+    {operation: 'Value-initialise n trivially constructible elements', time: 'Θ(n)', space: 'n/a', note: 'One full write pass; often avoidable'},
+    {operation: 'Default-initialise n trivially constructible elements', time: 'Θ(1)', space: 'n/a', note: 'No writes; values indeterminate'},
     {operation: 'vector growth, nothrow-movable element', time: 'Θ(n) amortised Θ(1)', space: 'Θ(n)', note: 'Moves only'},
     {operation: 'vector growth, potentially-throwing move', time: 'Θ(n) copies', space: 'Θ(n)', note: 'Element allocations repeated'},
   ]}
@@ -203,8 +203,8 @@ is two. Over-aligned allocation, as above, removes the question from the inner l
 
 Aliasing determines whether a loop can be vectorized at all. Two pointers of the same type
 may alias, and the compiler must assume they do unless it can prove otherwise. Passing
-distinct spans and asserting their disjointness — by construction, by `__restrict` where it
-is available, or by taking the values into locals before the loop — is what allows the
+distinct spans and asserting their disjointness (by construction, by `__restrict` where it
+is available, or by taking the values into locals before the loop) is what allows the
 scheduler to reorder loads and stores.
 
 Trivial copyability determines whether a copy is a `memcpy`. A type that is trivially
@@ -218,14 +218,14 @@ they degrade the fallthrough path that dominates.
 
 ## Limitations
 
-The object model gives no way to state that a type is *trivially relocatable* — that a move
+The object model gives no way to state that a type is *trivially relocatable*; that a move
 followed by a destruction of the source is equivalent to a byte copy. Almost all types are,
 including every standard container implementation in wide use, and the absence of the
 property in the language forces containers to move-and-destroy element by element.
 
 Lifetime is not tracked by the type system. A dangling reference is well-formed and
-undefined, and generic code that returns references into its arguments — as the ranges
-library does routinely — must document the dependency, since the compiler cannot.
+undefined, and generic code that returns references into its arguments (as the ranges
+library does routinely) must document the dependency, since the compiler cannot.
 
 Initialisation remains irregular: parentheses, braces and equals do not mean the same
 thing, and the differences bite hardest exactly where generic code needs uniformity, in
@@ -241,7 +241,7 @@ the storage the model describes.
 
 ## References
 
-- ISO/IEC 14882, *Programming languages — C++*, clauses on the object model, value
+- ISO/IEC 14882, *Programming languages: C++*, clauses on the object model, value
   categories, and initialisation.
 - B. Stroustrup, *The Design and Evolution of C++*, Addison-Wesley, 1994, on the origin of
   the value-semantics discipline.

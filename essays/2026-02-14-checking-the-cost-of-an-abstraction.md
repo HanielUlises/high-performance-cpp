@@ -21,7 +21,7 @@ it is decided by reading them, not by reasoning about the language's design phil
 Three conditions have to hold. The parameterisation must be resolved during translation, so that
 no indirect call remains. The representation must be unchanged, so that no additional data
 movement is introduced. And the abstraction must not obstruct an optimisation the concrete
-version would have received — which is the condition that fails most often and most quietly.
+version would have received, which is the condition that fails most often and most quietly.
 
 The first two are easy to check and are usually satisfied. `static_assert(sizeof(W) ==
 sizeof(T))` settles the second; the absence of a virtual function settles the first.
@@ -55,12 +55,12 @@ changes.
 The mechanics are unremarkable. Compile the abstract and concrete versions of a kernel and
 compare the generated code. Keep the comparison in the build, so that a compiler upgrade or an
 innocuous refactor that breaks it is caught when it happens rather than during the next
-performance investigation. Assert the representational properties — size, triviality, alignment —
+performance investigation. Assert the representational properties (size, triviality, alignment)
 next to the type, since they are part of its interface for the code that depends on them.
 
 What makes this worth doing is not that abstractions are usually expensive. They are usually
 free. It is that the cases where they are not are invisible in the source, and the cost is
-attributed to something else — to the algorithm, to the machine, to the compiler — for a long
+attributed to something else (to the algorithm, to the machine, to the compiler) for a long
 time before anyone looks.
 
 ## The stronger case

@@ -19,7 +19,7 @@ description: The type as a value space with operations, the regularity requireme
 
 <Definition title="Type as an abstraction">
 A type $T$ denotes a pair $(V_T, O_T)$: a set of values $V_T$, and a set of operations
-$O_T$ on that set. The *representation* — the object layout, the bytes in storage — is a means
+$O_T$ on that set. The *representation* (the object layout, the bytes in storage) is a means
 of realising the pair and is not part of the abstraction. Two objects of type $T$ hold the same
 value when no operation in $O_T$ distinguishes them.
 </Definition>
@@ -36,8 +36,8 @@ and the failures of generic code are almost always failures of that abstraction 
 the syntax.
 
 A concrete instance: `std::sort` requires that its comparison be a strict weak ordering.
-Comparing floating-point values containing NaN violates it — NaN is unordered with everything,
-so the induced equivalence is not transitive — and the consequence is not a wrong ordering but
+Comparing floating-point values containing NaN violates it (NaN is unordered with everything,
+so the induced equivalence is not transitive) and the consequence is not a wrong ordering but
 undefined behaviour, including out-of-range writes in common implementations. The type `double`
 does not model a totally ordered set, and the algorithm's requirement is on the abstraction, not
 on the syntax.
@@ -64,7 +64,7 @@ correct only if equality is an equivalence.
 
 Two failure modes recur. A type whose `operator==` compares identity rather than value violates
 substitutability with respect to construction. A type with mutable state observable through its
-operations — a cached computation exposed through a getter — violates it with respect to that
+operations (a cached computation exposed through a getter) violates it with respect to that
 getter.
 
 The relation between a mathematical structure and its C++ representation is a *homomorphism*
@@ -141,12 +141,12 @@ that claims `std::strong_ordering` is lying to every algorithm that consults the
 Three rules follow from the definition.
 
 The invariant is stated and established in the constructor. A type whose values are a proper
-subset of its representable states — a normalised rational, a unit vector, a sorted range —
+subset of its representable states (a normalised rational, a unit vector, a sorted range)
 must establish the subset on construction and preserve it in every operation, or the value space
 is not what the type claims.
 
 Equality means value equality, or the operation is not provided. A type for which equality is
-not meaningful — a handle to a resource, a callback — declines to define `operator==` rather
+not meaningful (a handle to a resource, a callback) declines to define `operator==` rather
 than defining it as identity comparison. Algorithms then reject it, which is correct.
 
 Operations preserving the abstraction are members or hidden friends; operations exposing the

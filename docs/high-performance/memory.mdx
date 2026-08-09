@@ -28,12 +28,12 @@ machine used in a measurement are reported with that measurement.
 
 | Level | Capacity | Latency | Bandwidth |
 | --- | --- | --- | --- |
-| Register | ~1 KB | 0 cycles | — |
+| Register | ~1 KB | 0 cycles | n/a |
 | L1 data | 32–48 KB per core | 4–5 cycles | ~200 GB/s per core |
 | L2 | 0.5–2 MB per core | 12–20 cycles | ~100 GB/s per core |
 | L3 | 16–256 MB shared | 40–80 cycles | ~50 GB/s per socket |
 | DRAM | 10²–10³ GB | 200–400 cycles | 20–200 GB/s per socket |
-| Remote NUMA node | — | 1.5–2× local | 0.5–0.7× local |
+| Remote NUMA node | n/a | 1.5–2× local | 0.5–0.7× local |
 
 ## Motivation
 
@@ -65,7 +65,7 @@ $$
 \text{concurrency} = \text{bandwidth} \times \text{latency}.
 $$
 
-At 100 GB/s and 100 ns, sustaining peak bandwidth requires $10^4$ bytes in flight — about 160
+At 100 GB/s and 100 ns, sustaining peak bandwidth requires $10^4$ bytes in flight; about 160
 cache lines. A single core supports on the order of 10–16 outstanding misses, which is why one
 core cannot saturate a socket's memory bandwidth and why bandwidth-bound kernels must be run
 on many cores to reach the roofline.
@@ -191,8 +191,8 @@ measurement since it changes TLB behaviour substantially.
 
 Sequential access is served by hardware prefetchers that detect strides and issue ahead;
 random access is not, and the gap between the two on the same volume of data is a factor of
-ten to fifty. Converting random access to sequential — by sorting indices, by reordering the
-unknowns of a sparse system, by blocking a traversal — is usually the single largest
+ten to fifty. Converting random access to sequential (by sorting indices, by reordering the
+unknowns of a sparse system, by blocking a traversal) is usually the single largest
 available improvement.
 
 Streaming stores bypass the cache and avoid the read-for-ownership traffic that a normal
@@ -202,8 +202,8 @@ lines.
 
 Bandwidth is a shared resource. A kernel that saturates memory bandwidth on one core gains
 nothing from additional cores and may lose to contention; conversely a compute-bound kernel
-scales until it saturates the units. Establishing which regime a kernel is in — by measuring
-against a stream benchmark on the same machine — precedes any parallelisation decision.
+scales until it saturates the units. Establishing which regime a kernel is in (by measuring
+against a stream benchmark on the same machine) precedes any parallelisation decision.
 
 The prefetcher does not cross page boundaries. For 4 KB pages this interrupts a stream every
 512 doubles, which is invisible for large sequential reads and significant for strided

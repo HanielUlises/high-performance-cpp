@@ -78,7 +78,7 @@ Solver cost for the discrete Poisson problem, per unknown:
 | Conjugate gradient | $\Theta(N^{1/d})$ | $\Theta(N^{1+1/d})$ | Needs only operator application |
 | CG with multigrid preconditioner | $\Theta(1)$ | $\Theta(N)$ | Mesh-independent |
 | Multigrid | $\Theta(1)$ | $\Theta(N)$ | Optimal |
-| FFT (separable, regular) | — | $\Theta(N \log N)$ | Restricted applicability |
+| FFT (separable, regular) | n/a | $\Theta(N \log N)$ | Restricted applicability |
 
 The gap between $\Theta(N^{1+2/d})$ and $\Theta(N)$ is the whole reason multigrid exists, and
 it grows with problem size: at $N = 10^8$ in three dimensions, the ratio is more than two
@@ -124,7 +124,7 @@ inline void laplacian_apply(
 
 The innermost loop runs over the fastest-varying index, so the three $k$-neighbours are in the
 same cache lines and the $i$ and $j$ neighbours are in lines already fetched by adjacent
-iterations of the outer loops — provided the plane working set fits in cache.
+iterations of the outer loops; provided the plane working set fits in cache.
 
 The operator satisfies `LinearOperator`, so the Krylov methods of
 [Linear Algebra](/docs/mathematics/linear-algebra) apply without modification:
@@ -147,7 +147,7 @@ public:
 ## Implementation
 
 Stencil sweeps are blocked in the two slowest dimensions so that the working set of the
-innermost loop — three planes for a seven-point stencil — fits in cache. For a $512^3$ grid,
+innermost loop (three planes for a seven-point stencil) fits in cache. For a $512^3$ grid,
 three planes of doubles is 6 MB, which exceeds L2 and fits L3; blocking in $i$ and $j$ reduces
 this to the tile size and makes the sweep L2-resident.
 
@@ -164,8 +164,8 @@ $$
 \frac{T_{\text{comm}}}{T_{\text{comp}}} = \Theta\!\left(\frac{n^{d-1}}{n^d}\right) = \Theta(n^{-1}).
 $$
 
-Overlapping the exchange with the computation of the interior — which does not depend on the
-halo — hides most of the communication and is the standard construction.
+Overlapping the exchange with the computation of the interior (which does not depend on the
+halo) hides most of the communication and is the standard construction.
 
 Boundary conditions are applied by filling ghost cells rather than by branching inside the
 sweep, which keeps the inner loop free of control flow and vectorizable.
@@ -220,8 +220,8 @@ matrix-free Newton–Krylov methods avoid forming it, at the cost of requiring a
 that is itself matrix-free or approximated.
 
 Multigrid convergence depends on the smoother matching the operator. For anisotropic or
-strongly heterogeneous coefficients, standard smoothers fail and the remedies — line smoothers,
-semi-coarsening, algebraic multigrid — are substantially more complex.
+strongly heterogeneous coefficients, standard smoothers fail and the remedies (line smoothers,
+semi-coarsening, algebraic multigrid) are substantially more complex.
 
 ## Related entries
 

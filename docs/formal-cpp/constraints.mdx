@@ -168,8 +168,8 @@ Constraint sets are conjunctions of named concepts. Disjunctions are used only w
 alternative capabilities are meant, since they multiply the size of the disjunctive normal form
 and can make subsumption testing expensive.
 
-Where two capabilities genuinely do not order — a type may be contiguous, or sized, or both, and
-neither implies the other — the resolution is a third overload constrained by their conjunction,
+Where two capabilities genuinely do not order (a type may be contiguous, or sized, or both, and
+neither implies the other) the resolution is a third overload constrained by their conjunction,
 rather than an attempt to force an ordering:
 
 ```cpp
@@ -198,7 +198,7 @@ The third subsumes both, so it is preferred exactly where both apply.
     {operation: 'Subsumption, conjunctive normal forms', time: 'O(mn)', space: 'O(m+n)', note: 'The common case'},
     {operation: 'Subsumption with nested disjunctions', time: 'Exponential', space: 'Exponential', note: 'DNF blow-up'},
     {operation: 'Partial ordering, c candidates', time: 'O(c²) subsumption tests', space: 'O(c)', note: 'Pairwise'},
-    {operation: 'Deciding entailment', time: 'Undecidable', space: '—', note: 'Not attempted by the language'},
+    {operation: 'Deciding entailment', time: 'Undecidable', space: 'n/a', note: 'Not attempted by the language'},
   ]}
   unit="translation"
 />

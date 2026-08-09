@@ -35,8 +35,8 @@ are written as named concepts rather than inline expressions.
 ## Motivation
 
 Constraints answer two questions that concepts alone do not. The first is which declarations
-are viable for a given call — a filtering question, answered by satisfaction. The second is
-which of several viable declarations is preferred — an ordering question, answered by
+are viable for a given call: a filtering question, answered by satisfaction. The second is
+which of several viable declarations is preferred: an ordering question, answered by
 subsumption.
 
 The ordering question is the important one for library design. A generic algorithm typically
@@ -62,8 +62,8 @@ $$
 $$
 
 Only `&&` and `||` written directly in a constraint decompose. A conjunction hidden inside a
-type trait — `std::is_integral_v<T> && std::is_signed_v<T>` written as one atom via a
-variable template — is a single atom and decomposes no further.
+type trait (`std::is_integral_v<T> && std::is_signed_v<T>` written as one atom via a
+variable template) is a single atom and decomposes no further.
 
 Subsumption is defined on the normal forms. Writing them in disjunctive normal form,
 $P = \bigvee_i \bigwedge_j A_{ij}$ and $Q = \bigvee_k \bigwedge_l B_{kl}$, $P$ subsumes $Q$
@@ -128,8 +128,8 @@ template <class R> requires std::ranges::contiguous_range<R> && (sizeof(std::ran
 double bad_norm(const R& r);
 ```
 
-Here `contiguous_range` does subsume `random_access_range` — the standard concepts are
-defined by refinement — so the second is in fact preferred; the added `sizeof` atom does not
+Here `contiguous_range` does subsume `random_access_range` (the standard concepts are
+defined by refinement) so the second is in fact preferred; the added `sizeof` atom does not
 disturb that. The failure mode appears when the two constraints are written as independent
 traits rather than as refinements, and it is diagnosed only at the ambiguous call.
 
@@ -139,7 +139,7 @@ Three rules keep constraint sets orderable.
 
 Constraints are expressed as named concepts, never as bare trait expressions, so that
 refinement produces shared atoms. Where a raw trait must be used in more than one place, it
-is wrapped in a concept first — the wrapper is what makes the two uses the same atom.
+is wrapped in a concept first; the wrapper is what makes the two uses the same atom.
 
 Refinements are defined by conjoining the concept they refine, as `Contiguous` does above,
 rather than by restating its requirements. Restating produces distinct atoms with identical
@@ -209,7 +209,7 @@ The type system offers no way to declare that one atom implies another.
 
 Constraints restrict template arguments and not values. A requirement that a matrix be
 positive definite, or that an index be in range, is a property of a value and belongs to
-preconditions — in C++26, to contracts — not to constraints.
+preconditions (in C++26, to contracts) not to constraints.
 
 Constraint failure is not always local: a constraint that is satisfied but whose satisfaction
 required instantiating a class template can still produce a hard error from that

@@ -41,15 +41,15 @@ Dependences are classified by the order of access. For iterations $i < j$:
 
 $$
 \begin{aligned}
-\text{flow (RAW)}&: \; \text{write at } i, \text{ read at } j &&\text{— blocks vectorization} \\
-\text{anti (WAR)}&: \; \text{read at } i, \text{ write at } j &&\text{— blocks, removable by copying} \\
-\text{output (WAW)}&: \; \text{write at } i, \text{ write at } j &&\text{— blocks, usually a bug} \\
-\text{reduction}&: \; \text{accumulation into one location} &&\text{— vectorizable under associativity}
+\text{flow (RAW)}&: \; \text{write at } i, \text{ read at } j &&\text{blocks vectorization} \\
+\text{anti (WAR)}&: \; \text{read at } i, \text{ write at } j &&\text{blocks; removable by copying} \\
+\text{output (WAW)}&: \; \text{write at } i, \text{ write at } j &&\text{blocks; usually a defect} \\
+\text{reduction}&: \; \text{accumulation into one location} &&\text{vectorizable under associativity}
 \end{aligned}
 $$
 
 For an access pair $A[f(i)]$ and $A[g(j)]$ with affine $f, g$, the dependence question is
-whether $f(i) = g(j)$ has an integer solution in the iteration range — a linear Diophantine
+whether $f(i) = g(j)$ has an integer solution in the iteration range, a linear Diophantine
 problem the compiler solves exactly for affine subscripts and abandons for anything else.
 Indirect indexing $A[\text{index}[i]]$ is the standard case where no proof is possible.
 
@@ -188,8 +188,7 @@ compiler decide with full information.
 
 Mixed precision interacts with width. Computing in binary32 doubles $W$ and halves memory
 traffic; whether the accuracy suffices is the question of
-[Numerical Analysis](/docs/mathematics/numerical-analysis), and the common resolution —
-accumulate in binary64 while multiplying in binary32 — costs a widening conversion per element
+[Numerical Analysis](/docs/mathematics/numerical-analysis), and the common resolution (accumulate in binary64 while multiplying in binary32) costs a widening conversion per element
 and still gains.
 
 Verification is by the optimisation report and by the assembly. A claim that a loop vectorized
@@ -203,8 +202,8 @@ flags, and the surrounding code, and none of these is stable across a project's 
 Explicit vectorization with `std::simd` trades portability of source for predictability of
 outcome.
 
-Some algorithms have irreducible sequential dependence — Gauss–Seidel sweeps, sequential
-Monte Carlo, and any recurrence without an associative reformulation — and the response is to
+Some algorithms have irreducible sequential dependence (Gauss–Seidel sweeps, sequential
+Monte Carlo, and any recurrence without an associative reformulation) and the response is to
 change the algorithm, not the loop. Red-black ordering for Gauss–Seidel is exactly this: a
 different algorithm with different convergence, chosen because it vectorizes.
 

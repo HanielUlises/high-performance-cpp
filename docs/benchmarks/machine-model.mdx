@@ -2,7 +2,7 @@
 title: Machine Model
 sidebar_label: Machine Model
 sidebar_position: 2
-description: Characterising a target machine — peak rate, achievable bandwidth, ridge point, cache and TLB reach — before any kernel is measured.
+description: Characterising a target machine (peak rate, achievable bandwidth, ridge point, cache and TLB reach) before any kernel is measured.
 ---
 
 # Machine Model
@@ -86,7 +86,7 @@ write stream moves 50 percent more data than the arithmetic suggests. Non-tempor
 the fetch, and whether they were used must be reported since it changes the denominator.
 
 Bandwidth is measured with arrays several times the last-level cache, with parallel first touch,
-and at several thread counts, since one core cannot saturate a socket — the Little's law
+and at several thread counts, since one core cannot saturate a socket; the Little's law
 calculation in [Memory](/docs/high-performance/memory) gives the reason.
 
 ## Cache and TLB reach
@@ -125,8 +125,8 @@ The last two rows are the argument for blocking stated arithmetically: the same 
 between regimes according to how it is organised, and the blocking factor required is determined
 by the machine's ridge point.
 
-Every intensity above is a prediction from a cost model. Measured traffic differs — cache hits
-reduce it, conflict misses and read-for-ownership increase it — and hardware counters are the
+Every intensity above is a prediction from a cost model. Measured traffic differs (cache hits
+reduce it, conflict misses and read-for-ownership increase it) and hardware counters are the
 only way to know which.
 
 ## Reporting template

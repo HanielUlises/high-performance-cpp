@@ -77,8 +77,8 @@ $$
 $$
 
 Sound constraints admit only types on which the algorithm works; complete constraints admit
-every type on which it works. The design target is both, and where they conflict — because the
-condition distinguishing them is semantic and unexpressible — soundness is chosen and the gap is
+every type on which it works. The design target is both, and where they conflict (because the
+condition distinguishing them is semantic and unexpressible) soundness is chosen and the gap is
 documented.
 
 <Proposition title="Subsumption is a proper approximation of inclusion">
@@ -88,7 +88,7 @@ syntactically. Overload resolution therefore orders a strict subset of the pairs
 orders, and pairs it cannot order are ambiguous.
 </Proposition>
 
-The practical consequence — build refinements by conjoining the concept refined — is developed
+The practical consequence (build refinements by conjoining the concept refined) is developed
 in [Constraints](/docs/formal-cpp/constraints).
 
 ## C++ representation
@@ -191,7 +191,7 @@ set of types, and the second is reusable.
   rows={[
     {operation: 'Evaluate a concept, k atoms', time: 'O(k)', space: 'O(1)', note: 'Short-circuited; memoised per argument'},
     {operation: 'Normalise a concept, expansion s', time: 'Θ(s)', space: 'Θ(s)', note: 'Once per constraint expression'},
-    {operation: 'Test inclusion of model classes', time: 'Undecidable in general', space: '—', note: 'Requires quantification over all types'},
+    {operation: 'Test inclusion of model classes', time: 'Undecidable in general', space: 'n/a', note: 'Requires quantification over all types'},
     {operation: 'Test subsumption', time: 'O(mn) typical', space: 'O(m+n)', note: 'Decidable; strictly weaker than inclusion'},
   ]}
   unit="translation"
@@ -212,7 +212,7 @@ compile time in a heavily constrained library.
 
 Because concept satisfaction is memoised per argument tuple, repeating the same concept across
 an overload set costs once, whereas repeating an equivalent but textually distinct expression
-costs each time — and additionally breaks subsumption.
+costs each time, and additionally breaks subsumption.
 
 ## Limitations
 

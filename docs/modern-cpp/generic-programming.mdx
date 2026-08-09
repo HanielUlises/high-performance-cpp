@@ -41,9 +41,9 @@ statement anywhere of what a vector must provide for the algorithm to work.
 
 The lifted form has one implementation and one statement of requirements: the iteration
 needs an inner product, scalar multiplication, addition, and a symmetric positive-definite
-operator application. Any type providing those — including types not anticipated when the
+operator application. Any type providing those (including types not anticipated when the
 solver was written, such as a matrix-free operator or a block vector distributed across
-ranks — is admissible, and the correctness argument transfers unchanged.
+ranks) is admissible, and the correctness argument transfers unchanged.
 
 ## Formal formulation
 
@@ -137,7 +137,7 @@ caller.
 First, write the concrete algorithm and establish that it is correct. Second, identify every
 operation the correctness argument actually uses, distinguishing operations the argument
 needs from operations the implementation happens to have used. Third, name that set. Fourth,
-check the name against at least two substantially different models — a `std::vector<double>`
+check the name against at least two substantially different models, a `std::vector<double>`
 and a matrix-free operator, say, not two containers of scalars. Fifth, verify that the
 concrete case still generates the code it did before the lift.
 
@@ -171,7 +171,7 @@ changes.
 Generic code is not slower than concrete code when the parameterisation is resolved during
 translation, and this is verifiable rather than a matter of belief: compile the concrete
 instantiation and the hand-written version and compare the generated instructions. Where
-they differ, the cause is usually one of three things — an unerased indirection, an aliasing
+they differ, the cause is usually one of three things, an unerased indirection, an aliasing
 assumption the compiler could not discharge, or an interface that forces a copy.
 
 Element access through a generic interface must reduce to the same addressing arithmetic as
@@ -180,7 +180,7 @@ view it may compile to a chain of transformations that the optimiser must flatte
 deeply composed adaptors it sometimes does not.
 
 The arithmetic in the loop above is sequentially dependent through `acc`, so it runs at the
-latency of the addition rather than its throughput. The fix — multiple accumulators — is not
+latency of the addition rather than its throughput. The fix (multiple accumulators) is not
 a property of genericity; it is discussed in [Vectorization](/docs/high-performance/vectorization)
 and applies equally to the concrete code.
 

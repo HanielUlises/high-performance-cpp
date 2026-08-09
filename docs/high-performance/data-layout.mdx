@@ -68,7 +68,7 @@ $$
 + W \sum_{g < f} s_g + (i \bmod W)\, s_f,
 $$
 
-which places $W$ consecutive elements of each field contiguously — a vector register's worth —
+which places $W$ consecutive elements of each field contiguously (a vector register's worth)
 while keeping a whole block of all fields within a few lines.
 
 For a two-dimensional array, the padded row-major layout is
@@ -213,7 +213,7 @@ vectorization entirely.
 The number of concurrent memory streams is bounded by the prefetchers, typically 8 to 16 per
 core. A loop touching twenty arrays exceeds this and reverts to demand fetching; splitting it
 into several loops each with a few streams restores the prefetch behaviour, at the cost of an
-extra pass — a trade to be measured.
+extra pass, a trade to be measured.
 
 Alignment to the vector width matters most for stores. An unaligned store crossing a line
 boundary is split into two transactions, and in a store-heavy kernel this halves throughput.

@@ -43,8 +43,8 @@ Reasoning about concepts is reasoning about these sets and their inclusions.
 
 ## Motivation
 
-Before C++20 a template's domain was implicit. The requirements existed — an algorithm using
-`*it` and `++it` requires both — but were recoverable only by reading the body or by
+Before C++20 a template's domain was implicit. The requirements existed (an algorithm using
+`*it` and `++it` requires both) but were recoverable only by reading the body or by
 provoking an error. Three consequences followed: diagnostics reported the first failing
 expression at the bottom of an instantiation stack rather than the unsatisfied requirement
 at the top; overloads could not be ordered by specificity of requirements, so libraries
@@ -214,7 +214,7 @@ problem.
   rows={[
     {operation: 'Normalise a concept of depth d', time: 'Θ(size of expansion)', space: 'Θ(size of expansion)', note: 'Performed once per constraint expression'},
     {operation: 'Check satisfaction, k atoms', time: 'O(k)', space: 'O(1)', note: 'Short-circuited; results memoised per argument tuple'},
-    {operation: 'Subsumption test between two constraints', time: 'Exponential in the worst case', space: '—', note: 'Disjunctive normal form comparison'},
+    {operation: 'Subsumption test between two constraints', time: 'Exponential in the worst case', space: 'n/a', note: 'Disjunctive normal form comparison'},
   ]}
   unit="translation"
 />
@@ -245,7 +245,7 @@ A concept constrains syntax. `Ring<T>` as defined above is satisfied by any type
 right operations, whether or not multiplication distributes over addition or addition is
 associative. The laws are the reason the concept is called `Ring`, and nothing checks them.
 Types satisfying the syntax and violating the laws produce silently wrong results in
-algorithms that rely on them — floating-point addition, which is not associative, is the
+algorithms that rely on them: floating-point addition, which is not associative, is the
 standing example.
 
 Concepts cannot express complexity requirements. `std::random_access_iterator` requires that
