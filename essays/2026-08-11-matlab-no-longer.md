@@ -623,12 +623,12 @@ The generated binary must consequently be re-validated whenever the toolchain or
 
 The identical issue appears in model-predictive control, geometric collision detection, rigid-body dynamics, state estimation and numerical integration. In each case, the relevant properties are not simply "fast" or "slow". They are:
 
-* bounded execution time,
-* bounded allocation,
-* predictable memory traffic,
-* controlled numerical evaluation order,
-* known data layout,
-* and a measurable relationship between the source algorithm and the generated instructions.
+- bounded execution time,
+- bounded allocation,
+- predictable memory traffic,
+- controlled numerical evaluation order,
+- known data layout,
+- and a measurable relationship between the source algorithm and the generated instructions.
 
 ## Algorithm design under explicit control
 
