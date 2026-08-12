@@ -1,5 +1,4 @@
 ---
-
 slug: writing-the-reassociation
 title: Writing the Reassociation
 authors: [hpc]
