@@ -4,7 +4,7 @@ slug: matlab-no-longer
 title: MATLAB No Longer Has a Place in the Modern World
 authors: [hpc]
 tags: [numerical-analysis, scientific-computing, performance, semantics, robotics]
-----------------------------------------------------------------------------------
+---
 
 High-performance numerical kernels are defined by the algebraic laws they exploit and by the architectural parameters they expose. Associativity of addition, distributivity of multiplication over addition, cache-line geometry, SIMD vector width, TLB reach, and the precise cost of data motion through the memory hierarchy jointly determine both attainable accuracy and attainable throughput.
 
@@ -14,7 +14,13 @@ Any language or environment that conceals those parameters prevents the programm
 
 ## Floating-point evaluation, parenthesisation and error bounds
 
-Under IEEE-754 arithmetic, the parenthesisation of a sum or an inner product is part of the algorithm. Let (s=\sum_{i=1}^n x_i). A strictly sequential left-to-right accumulation satisfies
+Under IEEE-754 arithmetic, the parenthesisation of a sum or an inner product is part of the algorithm. Let
+
+$$
+s = \sum_{i=1}^{n} x_i.
+$$
+
+A strictly sequential left-to-right accumulation satisfies
 
 $$
 \left|\operatorname{fl}(s)-s\right|
@@ -25,10 +31,16 @@ $$
 where
 
 $$
-\gamma_k=\frac{ku}{1-ku},
+\gamma_k = \frac{ku}{1-ku},
 $$
 
-and (u) is the unit roundoff, equal to (2^{-53}) for binary64.
+and (u) is the unit roundoff, equal to
+
+$$
+u = 2^{-53}
+$$
+
+for binary64.
 
 An accumulation performed with (k) independent partial sums, the natural form under SIMD lanes or multi-threaded reduction trees, has a bound of order
 
@@ -36,7 +48,21 @@ $$
 \gamma_{n/k+k}\sum_{i=1}^{n}|x_i|.
 $$
 
-For terms of like sign, the reassociated form is therefore both faster and potentially more accurate: the depth of the dependency chain shrinks from (n) to roughly (n/k+k). When cancellation is present, both bounds become relative to (\sum_i |x_i|) rather than to (|s|), and the comparison of accuracy becomes data-dependent.
+For terms of like sign, the reassociated form is therefore both faster and potentially more accurate: the depth of the dependency chain shrinks from (n) to roughly (n/k+k).
+
+When cancellation is present, both bounds become relative to
+
+$$
+\sum_{i=1}^{n}|x_i|
+$$
+
+rather than to
+
+$$
+|s|.
+$$
+
+The comparison of accuracy therefore becomes data-dependent.
 
 The important point is that the parenthesisation is not an implementation detail. It is part of the numerical algorithm.
 
@@ -44,7 +70,7 @@ Consider the two computations
 
 $$
 s_{\mathrm{seq}}
-================
+=
 
 (((x_1+x_2)+x_3)+\cdots)+x_n
 $$
@@ -53,7 +79,7 @@ and
 
 $$
 s_{\mathrm{tree}}
-=================
+=
 
 (x_1+x_2)+(x_3+x_4)+\cdots.
 $$
@@ -115,14 +141,16 @@ For example, a kernel can require contiguous storage:
 ```cpp
 #include <concepts>
 #include <span>
+#include <type_traits>
 
 template<class T>
 concept Arithmetic =
     std::is_arithmetic_v<T>;
 
 template<Arithmetic T>
-double dot(std::span<const T> x,
-           std::span<const T> y)
+double dot(
+    std::span<const T> x,
+    std::span<const T> y)
 {
     double result = 0.0;
 
@@ -142,11 +170,13 @@ The same operation can be expressed with stronger compile-time information when 
 ```cpp
 #include <array>
 #include <cstddef>
+#include <type_traits>
 
 template<class T, std::size_t N>
 requires std::is_arithmetic_v<T>
-constexpr T dot(const std::array<T, N>& x,
-                const std::array<T, N>& y)
+constexpr T dot(
+    const std::array<T, N>& x,
+    const std::array<T, N>& y)
 {
     T result{};
 
@@ -180,13 +210,16 @@ The same principle applies to multidimensional layout. With `std::mdspan`, the s
 
 ```cpp
 #include <mdspan>
+#include <algorithm>
+#include <cstddef>
 
 template<class Matrix>
 double trace(const Matrix& A)
 {
     double result = 0.0;
 
-    const auto n = std::min(A.extent(0), A.extent(1));
+    const auto n =
+        std::min(A.extent(0), A.extent(1));
 
     for (std::size_t i = 0; i < n; ++i) {
         result += A(i, i);
@@ -200,7 +233,7 @@ The algorithm does not have to be rewritten for row-major and column-major stora
 
 That distinction matters because the machine does not execute an abstract matrix. It executes loads and stores at concrete addresses.
 
-## Python and Julia as partial alternatives
+## Python and Julia are goated
 
 Python, through NumPy, SciPy and the surrounding array-programming stack, provides an exceptionally productive interactive surface. For standard operations, this is not a weakness: NumPy delegates substantial numerical work to compiled native kernels, and Python is often an excellent orchestration language.
 
@@ -212,9 +245,9 @@ A simple NumPy expression such as
 y = alpha * x + beta * z
 ```
 
-looks like one operation at the language level. Depending on the expression and the implementation, it may involve several native kernels and intermediate arrays.
+looks like one operation at the language level. Depending on the expression and implementation, it can involve several native kernels and intermediate arrays.
 
-A fused implementation can make the data movement explicit:
+A fused implementation can make the data movement more explicit:
 
 ```python
 import numpy as np
@@ -251,15 +284,18 @@ def four_way_sum(x):
 
 The algorithm is now explicit, but the Python loop is not a competitive implementation of the numerical kernel. The usual answer is to move the operation into NumPy, Numba, Cython, C, C++, Rust, or another compiled layer.
 
-The language is therefore excellent at expressing the *use* of a numerical kernel while often being less suitable for expressing the kernel itself when its performance contract is unusually specific.
+The language is therefore excellent at expressing the use of a numerical kernel while often being less suitable for expressing the kernel itself when its performance contract is unusually specific.
 
 Julia closes much of this gap.
 
 A Julia implementation can specialize a generic kernel on concrete argument types:
 
 ```julia
-function dot_product(x::AbstractVector{T},
-                     y::AbstractVector{T}) where {T<:AbstractFloat}
+function dot_product(
+    x::AbstractVector{T},
+    y::AbstractVector{T}
+) where {T<:AbstractFloat}
+
     result = zero(T)
 
     @inbounds @simd for i in eachindex(x, y)
@@ -288,7 +324,7 @@ C++ occupies a different point in this design space because the language does no
 
 The programmer can state the representation, lifetime, alignment, ownership, layout, and algorithmic structure directly.
 
-For example, allocation can be removed from a real-time kernel entirely:
+For example, allocation can be removed from a numerical kernel entirely:
 
 ```cpp
 template<class T>
@@ -304,21 +340,6 @@ void axpy(
 ```
 
 There is no hidden allocation in the algorithm. The function receives storage owned elsewhere.
-
-The same idea can be made explicit for an aligned working buffer:
-
-```cpp
-#include <cstddef>
-#include <memory>
-
-template<class T>
-struct AlignedBuffer {
-    T* data;
-    std::size_t size;
-};
-```
-
-The ownership policy can then be selected independently of the numerical kernel.
 
 For a reduction where reassociation is desirable, the algorithm can expose independent accumulators:
 
@@ -456,7 +477,7 @@ This is not merely about writing more code. It is about deciding which quantitie
 
 The strongest case for C++ in this context is not that C++ is inherently faster than every other language. It is that C++ permits the numerical algorithm, representation, and machine-level policy to remain visible simultaneously.
 
-A reduction policy can be encoded as a type:
+A reduction policy can be represented as a type:
 
 ```cpp
 struct SequentialReduction {
@@ -521,13 +542,11 @@ Accumulator sum_as(
 Now the distinction between binary32 input and binary64 accumulation is explicit:
 
 ```cpp
-float  sum_f32 = sum_as<float, float>(x);
+float sum_f32 = sum_as<float, float>(x);
 double sum_f64 = sum_as<float, double>(x);
 ```
 
 The precision policy is no longer an implicit property of an interpreter, a BLAS implementation, or a compiler heuristic.
-
-C++ is not magically making the algorithm correct. It is making the relevant choices representable.
 
 ## C++ under robotics constraints
 
@@ -586,8 +605,7 @@ inline SpatialVector cross_motion(
 {
     SpatialVector result{};
 
-    // Spatial cross product.
-    // The compiler sees a fixed-size operation.
+    // Fixed-size spatial operation.
 
     return result;
 }
@@ -622,8 +640,7 @@ Distributivity licenses transformations such as Horner's rule:
 
 $$
 a_0+a_1x+a_2x^2+\cdots+a_nx^n
-=============================
-
+=
 a_0+x(a_1+x(a_2+\cdots+x a_n)).
 $$
 
@@ -685,8 +702,4 @@ For interactive exploration, MATLAB remains convenient. For conventional numeric
 
 But for workloads in which the algorithm, representation, numerical semantics and temporal behaviour must all be treated as part of the specification, modern C++ provides something fundamentally different: the ability to expose the abstraction boundary itself and decide, one layer at a time, which properties belong to the mathematics, which belong to the type system, which belong to the compiler, and which belong to the machine.
 
-That is the point.
-
-C++ is not valuable because it makes every program fast.
-
-It is valuable because it lets the programmer state what **fast**, **numerically controlled**, and **architecturally predictable** are supposed to mean.
+That is the point. MATLAB supplies neither the algorithm nor the guarantees.
